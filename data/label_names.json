@@ -1,0 +1,42 @@
+[
+  {
+    "index": 0,
+    "name": "Limitation of liability",
+    "rubricId": "limitation_of_liability"
+  },
+  {
+    "index": 1,
+    "name": "Unilateral termination",
+    "rubricId": "unilateral_termination"
+  },
+  {
+    "index": 2,
+    "name": "Unilateral change",
+    "rubricId": "unilateral_change"
+  },
+  {
+    "index": 3,
+    "name": "Content removal",
+    "rubricId": "content_removal"
+  },
+  {
+    "index": 4,
+    "name": "Contract by using",
+    "rubricId": "contract_by_using"
+  },
+  {
+    "index": 5,
+    "name": "Choice of law",
+    "rubricId": "choice_of_law"
+  },
+  {
+    "index": 6,
+    "name": "Jurisdiction",
+    "rubricId": "jurisdiction"
+  },
+  {
+    "index": 7,
+    "name": "Arbitration",
+    "rubricId": "arbitration"
+  }
+]

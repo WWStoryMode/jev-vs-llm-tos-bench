@@ -8,7 +8,10 @@
   "scripts": {
     "play": "tsx scripts/jev-playground.ts",
     "llm-hello": "tsx scripts/llm-hello.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "export-data": "tsx scripts/export-data.ts",
+    "inspect-data": "tsx scripts/inspect-data.ts",
+    "make-sample": "tsx scripts/make-sample.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
