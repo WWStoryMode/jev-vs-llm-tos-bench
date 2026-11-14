@@ -31,8 +31,14 @@ Reproduce any of them with `npm run play -- <name>`. Raw requests and responses 
 - Every `false` criterion ends with "…or is about something else" to stop topic-level matches.
 - Keep raw probabilities so the threshold sweep can be recomputed without new calls.
 
-## Open questions → check in step 2/4
-- Do UNFAIR-ToS experts label "change with notice + right to leave" as unilateral change? Look at test sentences containing "notify" or "notice". The answer decides the `unilateral_change` criterion.
+## Dataset findings (step 2)
+- Test split: 1,607 sentences; 172 are unfair (10.7%) and 14 of those are multi-label. Per category: change 38, termination 38, liability 38, contract-by-using 23, jurisdiction 16, content removal 13, choice of law 13, arbitration 7. Arbitration has only 7 positives, so its F1 will be noisy.
+- **Notice does not make a change clause fair.** Of 26 test sentences that mention both changes and notice, the experts flag the sentence that *grants the power to change* even when notice is promised (test-0359: 30 days' notice; test-0798; test-1141: "notify and, where required, seek consent"; test-1396: 14 days in advance). Sentences that only *describe the notice procedure* are labelled fair (test-0016, 0680, 0857, 1577, 1589). So Jev's 0.92 in NOTES #6 matched the experts' convention. The `unilateral_change` criterion should still separate "grants the power" from "describes the procedure".
+- **Continued use after a change** is labelled `contract_by_using`, not `unilateral_change` (test-0018, test-0682).
+- **Some labels look inconsistent:** test-0653 ("we will try to notify you of material revisions") is `unilateral_change`, while the similar test-0680 is fair. "Modify ... at any time" for free trials and virtual items is labelled `unilateral_termination` (test-0056, test-0900). Expect a ceiling on achievable F1.
+- **Some sentences depend on other sentences:** e.g. test-0857, "if we do this…". These are hard for any single-sentence classifier.
+
+## Open questions → check in step 4
 - Run-to-run variation: `content_removal` gave 0.01 vs 0.02 on identical input. Probably small and harmless, but the consistency metric will show whether sentences near 0.5 flip label between runs.
 - Related-but-different neighbours (e.g. a termination sentence next to a content-removal one) might confuse Jev more than unrelated ones did.
 - Possible experiment: put neighbours in a separate field, `{clause, context}`, with questions about `` `clause` `` only. This could help clauses that depend on definitions elsewhere.

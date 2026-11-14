@@ -17,7 +17,7 @@ The brief (`PROJECT_BRIEF.md`) asks for an experiment that compares two pipeline
 ## Layout
 ```
 .nvmrc  .env.example  .gitignore  package.json  tsconfig.json
-/data      unfair_tos_test.jsonl, label_names.json, sample_200.jsonl
+/data      unfair_tos_test.jsonl, label_names.json, sample_400.jsonl
 /src
   config.ts      load .env, export JEV_MODEL / LLM_MODEL / key / concurrency / threshold
   openrouter.ts  shared fetch wrapper: auth headers, retry with backoff on 429/5xx, timing, cost extraction
@@ -30,7 +30,7 @@ The brief (`PROJECT_BRIEF.md`) asks for an experiment that compares two pipeline
   eval.ts        CLI entry: --pipeline a|b|both --runs N --sample path
 /scripts
   export-data.ts fetch test split + features from datasets-server → /data
-  make-sample.ts deterministic (seeded) 200-sentence sample: all unfair + fair fill
+  make-sample.ts deterministic (seeded) 400-sentence sample: all 172 unfair + 228 fair, kept in document order
   hello.ts       one Jev call + one LLM call, logs answers + usage.cost
 /results         per-run JSONL (raw responses), metrics CSV, summary.md
 ```
@@ -58,7 +58,7 @@ Dependencies: `tsx`, `typescript`, `zod`, `dotenv`, `p-limit`. Nothing else.
    - Calls `GET https://datasets-server.huggingface.co/info?dataset=coastalcph/lex_glue&config=unfair_tos` and reads the exact label order into `label_names.json`. The order is not hard-coded.
    - Pages through `/rows?...&split=test&offset=&length=100` and writes `unfair_tos_test.jsonl` as `{id, text, labels:number[]}`.
 
-   `make-sample.ts` then builds the sample from every unfair test sentence plus fair sentences up to about 200, using a fixed seed. If unfair sentences alone come to more than 200, cap them so every category is still covered. It prints the count per category.
+   `make-sample.ts` then builds the sample from all 172 unfair test sentences plus 228 seeded-random fair ones (400 in total), re-sorted into document order. We chose 400 over the brief's ~200 because 172 unfair + 28 fair would be 86% unfair and hide false positives. It prints the count per category.
 3. **Rubric.** Write `rubric.json` with 8 noul questions, giving precise and literal criteria for each category. Use the EU-consumer-law framing of the UNFAIR-ToS guidelines. The `false` criterion should say "or the clause is about something else". Both pipelines build their prompts from this one file. `clarity` is left out for now as a stretch goal.
 4. **Pipeline B, step 1–2.** Make one Jev call per sentence with all 8 questions, using `p-limit` with concurrency from config (default 8). Store the raw probabilities so the threshold sweep can be recomputed offline without new calls. A category is predicted when `prob ≥ threshold`. Log failures and keep going.
 5. **Pipeline A.** Send batches of 40 consecutive sentences, each with an ID. The system prompt contains the rubric, and the LLM returns `{results:[{id, labels:[cat slugs], explanation}]}`. Validate with zod:
@@ -69,7 +69,7 @@ Dependencies: `tsx`, `typescript`, `zod`, `dotenv`, `p-limit`. Nothing else.
    - `metrics.ts` computes per-category P/R/F1 and micro-F1, plus a Jev threshold sweep at 0.3/0.5/0.7/0.9 from the stored probabilities.
    - It measures latency as wall-clock time per 100 sentences, and cost as the sum of `usage.cost` per 100 sentences, extrapolated to per 1k and per 100k.
    - Consistency is the % of sentences whose label set differs across `--runs 3`. Reliability is the % malformed or failed.
-   - `eval.ts` writes `results/<timestamp>_<models>/metrics.csv` and `summary.md`. The summary contains the comparison table, the models used, the sample size, and the brief's caveats: class imbalance, contamination risk, EU-law scope, and that 200 sentences gives a small absolute cost.
+   - `eval.ts` writes `results/<timestamp>_<models>/metrics.csv` and `summary.md`. The summary contains the comparison table, the models used, the sample size, and the brief's caveats: class imbalance, contamination risk, EU-law scope, and that 400 sentences gives a small absolute cost.
    - It also writes `explanations_sample.csv`, with an empty `rating` column for the manual 1–5 explanation rating.
 
 ## Out of scope for this pass
@@ -80,7 +80,7 @@ Dependencies: `tsx`, `typescript`, `zod`, `dotenv`, `p-limit`. Nothing else.
 ## Verification
 - `nvm use && npm i && npx tsx scripts/hello.ts` prints a Jev answer and an LLM answer, each with a non-zero `usage.cost`.
 - After `export-data`, the test row count matches the datasets-server `num_rows`, and `label_names.json` has 8 names.
-- `make-sample` prints about 200 sentences with every category present.
-- `npx tsx src/eval.ts --pipeline b --sample data/sample_200.jsonl` first runs on a 10-sentence slice (`--limit 10`) to check plumbing and cost, then on the full sample. The F1 values in `summary.md` look plausible: non-zero, and the sweep changes P/R in the expected direction.
+- `make-sample` prints 400 sentences (172 unfair) with every category present, and rerunning it gives an identical file.
+- `npx tsx src/eval.ts --pipeline b --sample data/sample_400.jsonl` first runs on a 10-sentence slice (`--limit 10`) to check plumbing and cost, then on the full sample. The F1 values in `summary.md` look plausible: non-zero, and the sweep changes P/R in the expected direction.
 - Then `--pipeline a`, then `--pipeline both --runs 3`, and check that consistency and reliability are filled in.
 - Unit-check `metrics.ts` with a tiny hand-built fixture where P/R/F1 are known: a quick assert script in `scripts/test-metrics.ts`.
