@@ -10,6 +10,7 @@ The brief (`PROJECT_BRIEF.md`) asks for an experiment that compares two pipeline
 
 **Decisions:**
 - Every model ID is configurable through `.env`: `JEV_MODEL=typesafe/jev-1.13` and `LLM_MODEL=` (a Claude model ID from OpenRouter). Both go through OpenRouter with one key, so switching models means changing one env var. Each results file records which models it used.
+- Jev 1.14 now exists. The brief pins `typesafe/jev-1.13`, so keep that as the default for reproducibility. Rerunning with 1.14 is a single env change.
 - Call Jev with raw `fetch` to `POST https://openrouter.ai/api/v1/systemone` rather than through the TypeSafe SDK. That means fewer dependencies and direct access to `usage.cost`.
 - Call the LLM with raw `fetch` to `https://openrouter.ai/api/v1/chat/completions`. Request JSON output and read `usage.cost`; pass `usage: {include: true}` if the response doesn't include it by default.
 
@@ -36,7 +37,23 @@ The brief (`PROJECT_BRIEF.md`) asks for an experiment that compares two pipeline
 Dependencies: `tsx`, `typescript`, `zod`, `dotenv`, `p-limit`. Nothing else.
 
 ## Steps (follows the brief's build order)
-1. **Scaffold and hello world.** Add the scaffold files: `.nvmrc`, `package.json` scripts, `.gitignore` covering `.env`, `node_modules` and `results/raw`, and `.env.example`. Write `openrouter.ts` and `scripts/hello.ts`, then confirm that both responses return `usage.cost`. Record the actual shape of each response before writing the parsers.
+1. **Scaffold, then learn Jev hands-on.** This is a practice project, so step 1 is about learning the API, not only checking that a call works.
+   - **Scaffold:** `.nvmrc` (24; the SDK needs Node 22+), `package.json` scripts, `.env.example` (`OPENROUTER_API_KEY`, `JEV_MODEL`, `LLM_MODEL`), and `src/openrouter.ts`, a thin fetch wrapper that logs the full request and response.
+   - **Reading order (about 20 minutes):**
+     1. docs.typesafe.ai/primitives (noul, choice and score; one snap judgment per question)
+     2. docs.typesafe.ai/concepts/state (object state, referring to fields by `` `path` ``)
+     3. docs.typesafe.ai/api (the raw request and response schema)
+     4. openrouter.ai/docs/guides/community/jev (the OpenRouter differences)
+   - **`scripts/jev-playground.ts`:** a set of small experiments the user edits and runs with `npx tsx scripts/jev-playground.ts <name>`. Each one prints `answers` and `usage` (including `usage.cost`) and saves the raw response to `results/playground/`.
+     - `hello`: the brief's example request, verbatim.
+     - `state-shape`: the same clause sent as a plain string and as `{clause}`, to compare the answers.
+     - `fanout`: one sentence with all 8 rubric questions in a single call, compared with 8 separate calls, to see the cost and latency difference.
+     - `criteria-wording`: a vague question against a precise one on a tricky clause, such as an arbitration sentence that also names a jurisdiction, to watch the probabilities move.
+     - `types`: the same clause through `noul`, `choice` (over the 8 categories plus "none") and `score` (the clarity levels), to see what each answer type looks like.
+     - `context-noise`: one target sentence alone, then wrapped in 10 surrounding sentences, to test the brief's claim that irrelevant context hurts.
+   - **`scripts/llm-hello.ts`:** one chat completion through `LLM_MODEL` that logs `usage.cost`.
+   - **Write-up:** `NOTES.md` records what each experiment showed. Those findings decide the final `rubric.json` wording and the state shape used in pipeline B.
+   - **Division of work:** I scaffold the scripts with the experiments filled in. You change the questions and criteria and rerun them; I'm here to explain anything.
 2. **Data.** `export-data.ts` does three things:
    - Calls `GET https://datasets-server.huggingface.co/info?dataset=coastalcph/lex_glue&config=unfair_tos` and reads the exact label order into `label_names.json`. The order is not hard-coded.
    - Pages through `/rows?...&split=test&offset=&length=100` and writes `unfair_tos_test.jsonl` as `{id, text, labels:number[]}`.

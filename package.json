@@ -1,0 +1,22 @@
+{
+  "name": "jev-vs-llm-tos-bench",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "play": "tsx scripts/jev-playground.ts",
+    "llm-hello": "tsx scripts/llm-hello.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.10",
+    "zod": "^4.6.7"
+  }
+}
