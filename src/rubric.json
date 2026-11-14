@@ -1,0 +1,67 @@
+{
+  "_note": "DRAFT v0. One noul question per UNFAIR-ToS category. Shared verbatim by both pipelines. Keys are our own ids; the mapping to dataset label indices is built from data/label_names.json (step 2), never hard-coded.",
+  "limitation_of_liability": {
+    "type": "noul",
+    "instructions": "Does `clause` exclude or limit the provider's liability for damages, losses, or harm to the user?",
+    "criteria": {
+      "true": "The clause says the provider is not liable, or caps or restricts the damages it will pay.",
+      "false": "The clause does not limit the provider's liability, or is about something else."
+    }
+  },
+  "unilateral_termination": {
+    "type": "noul",
+    "instructions": "Does `clause` let the provider suspend or terminate the user's account or the service at its own discretion?",
+    "criteria": {
+      "true": "The provider can end or suspend the service or account without the user's agreement, with or without cause.",
+      "false": "Termination needs a specific, justified reason or the user's agreement, or the clause is about something else."
+    }
+  },
+  "unilateral_change": {
+    "type": "noul",
+    "instructions": "Does `clause` let the provider change the terms or the service on its own, without the user's agreement?",
+    "criteria": {
+      "true": "The provider can modify the terms or service unilaterally.",
+      "false": "Changes require the user's consent, or the clause is about something else."
+    }
+  },
+  "content_removal": {
+    "type": "noul",
+    "instructions": "Does `clause` let the provider delete or remove the user's content at its own discretion?",
+    "criteria": {
+      "true": "The provider can remove, delete, or block user content without a specific, justified reason or without notice.",
+      "false": "Content removal is not covered, or needs a specific reason and notice, or the clause is about something else."
+    }
+  },
+  "contract_by_using": {
+    "type": "noul",
+    "instructions": "Does `clause` say the user is bound by the terms simply by using or accessing the service?",
+    "criteria": {
+      "true": "Using, accessing, or visiting the service counts as accepting the terms.",
+      "false": "Acceptance requires an explicit action like signing up or clicking agree, or the clause is about something else."
+    }
+  },
+  "choice_of_law": {
+    "type": "noul",
+    "instructions": "Does `clause` state which country's or state's law governs the agreement?",
+    "criteria": {
+      "true": "The clause names the governing law that applies to the contract or disputes.",
+      "false": "The clause does not specify a governing law, or is about something else."
+    }
+  },
+  "jurisdiction": {
+    "type": "noul",
+    "instructions": "Does `clause` state which courts or which place disputes must be brought in?",
+    "criteria": {
+      "true": "The clause names the courts, venue, or location where disputes must be heard.",
+      "false": "The clause does not specify courts or venue, or is about something else."
+    }
+  },
+  "arbitration": {
+    "type": "noul",
+    "instructions": "Does `clause` require or allow disputes to be resolved by arbitration instead of in court?",
+    "criteria": {
+      "true": "The clause mandates arbitration or lets the provider force arbitration.",
+      "false": "The clause allows court proceedings, or is about something else."
+    }
+  }
+}
