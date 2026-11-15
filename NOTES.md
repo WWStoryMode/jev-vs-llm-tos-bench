@@ -269,6 +269,81 @@ Cost breakdown for B:
 - `runB()` records each stage separately (`stages`: jev and llm-explain). It saves `explanation`, `llmAgrees` and `explainError` per sentence. If explaining fails, Jev's labels for that sentence still count.
 - `eval.ts`: explanations are on by default for B, and `--no-explain` turns them off. Flags `--explain-batch 10` and `--explain-concurrency 4`. The summary adds a stage table and the veto table.
 
+## Rubric v1.2 for precision, final full-test comparison (step 6.5)
+
+Step 6 showed that precision on real proportions (about 11% unfair) is about 0.5 for both pipelines. Step 6.5 tightened the rubric. Rules:
+- **Tune on the full validation split** (2,275 sentences, 10% unfair), not `val_sample_530`. That sample is 43% unfair, so it hides false alarms the same way the 400 test sample did.
+- **Recall guard:** keep a change only if validation recall stays at least 0.95.
+- **Freeze the rubric, then run test once.**
+
+Results folders:
+- `2026-11-15T13-00-50_B_...`: v1.1 on validation
+- `13-13-09_B_...`: v1.2 on validation
+- `13-18-37_B_...`: B on test
+- `13-19-46_A_...`: A on test
+
+### Changes (all candidates are in `rubric.candidates.json`)
+
+| Category | Version | Change | Validation false alarms | Validation recall |
+|---|---|---|---|---|
+| limitation_of_liability | v4 | true: + "no refund or compensation"; false: + warranty-only disclaimers, the user's or a third party's own responsibility, indemnity given by the user, headings | 140 → 124 | 0.96 → 0.97 |
+| contract_by_using | v1 | only "using = accepting *these terms*"; not agreeing to something narrower (privacy policy, updates), "if you don't agree, don't use", "these terms apply" | 39 → 9 | 1.00 → 1.00 |
+| unilateral_termination | v3 | false: + licence grants that merely call the licence revocable, temporary maintenance suspensions | 51 → 38 | 0.95 → 0.95 |
+| Default threshold | 0.6 | the highest threshold with validation sentence recall at least 0.95 | | |
+
+Rejected:
+- `limitation_of_liability` v1 and v2 ("the provider's *own* liability for *damages*") cut false alarms to 31 and 41, but lost 6–10 real clauses (recall 0.81 and 0.88).
+- `limitation_of_liability` v3 (a broad rewrite) changed almost nothing.
+
+Left unchanged:
+- change and content_removal: about 30% of their false alarms already carry another expert label, and the rest are notice procedures and headings.
+- jurisdiction and arbitration: only 13 false alarms each.
+
+Validation, sentence level:
+
+| | False-alarm rate | Precision | Recall |
+|---|---|---|---|
+| v1.1 @0.5 | 14.3% | 0.43 | 0.96 |
+| v1.2 @0.5 | 11.7% | 0.48 | 0.95 |
+| v1.2 @0.6 | 9.1% | 0.54 | 0.95 |
+
+### Final head to head: full test split (1,607 sentences, 172 unfair), rubric v1.2
+
+| | A: LLM only | B: Jev + LLM explanations @0.6 | B at step 6 (v1.1 @0.5) |
+|---|---|---|---|
+| Sentence P / R | 0.58 / **0.94** | 0.58 / **0.93** | 0.46 / 0.96 |
+| Sentence F1 / F2 | 0.72 / 0.83 | 0.72 / 0.83 | 0.63 / 0.79 |
+| False-alarm rate | 8.2% (117) | 8.0% (115) | 13.3% (191) |
+| Micro F1 · macro F1 | 0.68 · 0.72 | 0.68 · 0.70 | 0.60 · 0.62 |
+| Exact label-set match | 90.6% | 90.6% | 85.9% |
+| **Cost per 100** | $0.051 | **$0.026** (Jev $0.0055 + explanations $0.020) | $0.030 |
+| Time per 100 | 4.3 s | 6.4 s | 7.1 s |
+| Reliability | 0 failures, 1 malformed reply (fixed by retry) | 0 failures, 0 malformed | 0 / 0 |
+
+Pipeline B's threshold sweep on test (v1.2), sentence level:
+
+| Threshold | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 |
+|---|---|---|---|---|---|
+| Recall | 0.97 | 0.95 | 0.93 | 0.92 | 0.85 |
+| Precision | 0.47 | 0.52 | 0.58 | 0.63 | 0.69 |
+| False-alarm rate | 13.2% | 10.4% | 8.0% | 6.5% | 4.7% |
+
+### What we learned
+1. **The rubric improved both pipelines equally.** A's precision rose from 0.50 to 0.58 without any change to A's code, because its prompt is built from the same `rubric.json`. A and B now tie on accuracy.
+2. **B is now half the cost of A** ($0.026 vs $0.051 per 100). That's because fewer flags mean fewer explanations: 275 instead of 356.
+3. **The 0.95 recall guard held on validation but not on test (0.93).** On test, B newly misses 5 unfair sentences. 4 of them are contract_by_using: "by using the service, you agree to the **privacy policy**". Test labels this pattern unfair, but validation labels it fair (Fitbit). That's the pattern contract_by_using v1 was built to exclude. We did not change the rubric back, because that would be tuning on test. This is a real limit: when the experts disagree with each other, a rule learned from one split can miss on the other.
+4. **For the recall-first default, 0.5 is the safer choice on test** (recall 0.95, false-alarm rate 10.4%). It's still better than v1.1 at 0.5 (0.96 recall, 13.3% false alarms). Because the threshold is a single setting, the UI can offer 0.5 as "sensitive" and 0.7 as "fewer alarms".
+5. **Using the LLM as a veto still loses real clauses:** 2 lost, 31 false alarms removed. The veto would give P 0.65 and R 0.92, which isn't worth it under our recall-first preference.
+6. **Remaining false alarms** (115) are mostly change and content_removal sentences and debatable liability clauses. The labels are inconsistent within this group, for example "not liable for third-party services" is labelled unfair for Airbnb and Oculus but fair for Nintendo, so further rewording would mostly fit the annotators' quirks.
+
+### Caveats for the write-up
+- v1.2 was motivated by **test false alarms seen in step 6** (the warranty disclaimers). Candidates were written from the general pattern and checked only on validation, but test is no longer fully held out. Combined with the earlier caveats (change v3 and arbitration v1), the test numbers are slightly optimistic for **both** pipelines, since both use the same rubric.
+- The 0.6 threshold was chosen on validation. On test, 0.5 would better meet the recall guard (see point 4).
+
+### Engineering
+- `eval.ts` reports the **false-alarm rate** (FP ÷ fair sentences), including a column in the threshold sweep. The default `--threshold` is now 0.6.
+- `rubric.json` `_note` is now v1.2 and records how each question was tuned.
+
 ## Remaining steps
 - **Step 7:** 3 consistency runs per pipeline; latency at the same concurrency for both; manual 1–5 scores for a sample of explanations; final summary.
 - **Later (optional):** contamination check on recent T&Cs, Jev 1.14, `{clause, context}` state, UI.
