@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "export-data": "tsx scripts/export-data.ts",
     "inspect-data": "tsx scripts/inspect-data.ts",
-    "make-sample": "tsx scripts/make-sample.ts"
+    "make-sample": "tsx scripts/make-sample.ts",
+    "rubric-check": "tsx scripts/rubric-check.ts",
+    "rubric-eval": "tsx scripts/rubric-eval.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

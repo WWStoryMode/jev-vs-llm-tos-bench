@@ -1,16 +1,16 @@
 // Export the UNFAIR-ToS test split from the Hugging Face datasets-server API.
-// Run:  npm run export-data
+// Run:  npm run export-data [-- test|validation|train]   (default: test)
 //
 // Writes:
 //   data/label_names.json      index -> dataset name -> our rubric id (read from dataset features, never hard-coded)
-//   data/unfair_tos_test.jsonl one sentence per line: {id, idx, text, labels: number[], categories: string[]}
+//   data/unfair_tos_<split>.jsonl one sentence per line: {id, idx, text, labels: number[], categories: string[]}
 import { mkdirSync, writeFileSync } from "node:fs";
 import rubricFile from "../src/rubric.json" with { type: "json" };
 
 const API = "https://datasets-server.huggingface.co";
 const DATASET = "coastalcph/lex_glue";
 const CONFIG = "unfair_tos";
-const SPLIT = "test";
+const SPLIT = process.argv[2] ?? "test"; // npm run export-data -- validation
 const PAGE = 100; // datasets-server max page size
 
 async function getJson<T>(url: string): Promise<T> {

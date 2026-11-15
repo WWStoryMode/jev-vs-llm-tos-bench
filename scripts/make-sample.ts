@@ -1,6 +1,7 @@
 // Build a deterministic evaluation sample: ALL unfair sentences + a seeded random set of fair ones.
-// Run:  npm run make-sample                      -> data/sample_400.jsonl (172 unfair + 228 fair)
-//       npm run make-sample -- 600 7             -> size 600, seed 7
+// Run:  npm run make-sample                          -> data/sample_400.jsonl (test: 172 unfair + 228 fair)
+//       npm run make-sample -- 600 7                 -> size 600, seed 7
+//       npm run make-sample -- 500 42 validation     -> data/val_sample_500.jsonl (for rubric tuning)
 //
 // Rows are re-sorted by original index so batches keep document order (the LLM sees neighbours).
 import { readFileSync, writeFileSync } from "node:fs";
@@ -8,6 +9,7 @@ import type { Sentence } from "./inspect-data.js";
 
 const size = Number(process.argv[2] ?? 400);
 const seed = Number(process.argv[3] ?? 42);
+const split = process.argv[4] ?? "test";
 
 // mulberry32: tiny seeded PRNG so the sample is reproducible
 function rng(a: number) {
@@ -19,7 +21,7 @@ function rng(a: number) {
   };
 }
 
-const rows: Sentence[] = readFileSync("data/unfair_tos_test.jsonl", "utf8")
+const rows: Sentence[] = readFileSync(`data/unfair_tos_${split}.jsonl`, "utf8")
   .trim()
   .split("\n")
   .map((l) => JSON.parse(l));
@@ -37,7 +39,8 @@ for (let i = shuffled.length - 1; i > 0; i--) {
 }
 const sample = [...unfair, ...shuffled.slice(0, size - unfair.length)].sort((a, b) => a.idx - b.idx);
 
-const file = `data/sample_${size}.jsonl`;
+// Test keeps its original name; other splits get a prefix so they can't be confused with the test sample.
+const file = split === "test" ? `data/sample_${size}.jsonl` : `data/${split.slice(0, 3)}_sample_${size}.jsonl`;
 writeFileSync(file, sample.map((r) => JSON.stringify(r)).join("\n") + "\n");
 
 const counts = new Map<string, number>();
