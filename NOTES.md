@@ -344,12 +344,95 @@ Pipeline B's threshold sweep on test (v1.2), sentence level:
 - `eval.ts` reports the **false-alarm rate** (FP ÷ fair sentences), including a column in the threshold sweep. The default `--threshold` is now 0.6.
 - `rubric.json` `_note` is now v1.2 and records how each question was tuned.
 
-## Remaining steps
-- **Step 7:** 3 consistency runs per pipeline; latency at the same concurrency for both; manual 1–5 scores for a sample of explanations; final summary.
-- **Later (optional):** contamination check on recent T&Cs, Jev 1.14, `{clause, context}` state, UI.
+## Consistency, latency, explanation quality, final summary (step 7)
 
-## Open questions → check in step 6+
-- Run-to-run variation: `content_removal` gave 0.01 vs 0.02 on identical input. Probably small and harmless, but the consistency metric will show whether sentences near 0.5 flip label between runs.
+All runs use rubric v1.2 on the 400-sentence test sample, with both pipelines at **4 parallel requests**. Total cost for step 7: about $1.04.
+- B, Jev only: 3 runs (`13-27-08`, `13-27-37`, `13-28-07`)
+- A: 3 runs (`13-28-33`, `13-28-58`, `13-29-23`)
+- B with explanations: 1 run (`13-30-19`)
+
+Analysis is in `results/step7/`. It comes from saved results, with no new API calls.
+
+### Consistency (`npm run consistency`)
+
+| | A: LLM only | B: Jev @0.6 | B: Jev @0.5 |
+|---|---|---|---|
+| **Sentences whose label set changed across 3 runs** | **20 / 400 (5.0%)** | **3 (0.75%)** | 5 (1.25%) |
+| Flagged / not-flagged answer changed | 8 (2.0%) | 2 (0.5%) | 4 (1.0%) |
+| Sentence F1 across runs | 0.904–0.917 | 0.912 in all 3 runs | 0.906–0.911 |
+| Malformed replies | 1 in 30 calls (fixed by retry) | not applicable | not applicable |
+
+- **Jev's probabilities barely move.** 73.4% of the 3,200 sentence × category probabilities were identical across runs. The median change is 0, the 99th percentile is 0.04 and the maximum is 0.09. A label can change only when a probability sits near the threshold: 18 pairs at 0.6, 21 at 0.5.
+- **The LLM changes labels at temperature 0.** Usually it adds or drops a second category, for example `unilateral_termination` alongside `unilateral_change`. It also changes whether some borderline liability sentences are flagged at all.
+- **For a product, Jev's stability matters.** The same document gets the same flags on every visit, and the probability shows how close a call was.
+
+### Latency at equal concurrency (4 requests in flight)
+
+| | Seconds per 100 sentences |
+|---|---|
+| A: LLM only (40 sentences per call) | 6.1–6.4 |
+| B: Jev only | 6.8–7.3 (about 0.27 s per call) |
+| B: Jev + explanations | 13.9 (Jev 28.9 s, then explanations 26.6 s) |
+
+- At the same concurrency, Jev alone is about as fast as batched LLM labelling. Jev's calls are small and quick, so it gains more from extra parallelism (3.5 s per 100 at concurrency 8).
+- B is slower because its two stages run one after the other. Streaming each flagged sentence to the explainer as soon as Jev returns would hide most of stage 3. That's worth doing in the UI.
+
+### Explanation quality (`npm run explanations-sample`, `npm run score-explanations`)
+
+The sample is 20 sentences from the full-test runs, all explained by both pipelines: 15 the experts labelled unfair and 5 shared false alarms. The two explanations were shown in random order. One rater (the project owner) scored each from 1 to 5. Ratings are in `results/step7/explanations_sample.csv`, with the answer key and summary alongside.
+
+| | A: LLM only | B: Jev + LLM explanations |
+|---|---|---|
+| Mean rating, all 20 | 3.40 | **5.00** |
+| Expert-unfair (15) | 3.53 | 5.00 |
+| Expert-fair / false alarms (5) | 3.00 | 5.00 |
+| Head to head | better on 0 | better on 19 (1 tie) |
+| Mean length | 88 characters | 151 characters |
+
+- **Pipeline B's explanations were preferred every time, but length is a confound.** When the two ratings differed, the longer explanation won 19 of 19 times. The extra length is mostly the *consequence for the user* ("so users lose money already paid…", "which can be distant and costly"). A tends to restate the clause. That consequence is what the rater rewarded.
+- **The quality gap comes from the explanation stage, not from Jev.** B's explainer handles 10 flagged sentences per call and is given the categories. A labels and explains 40 sentences in one reply, so it keeps explanations short. A prompt asking A for the consequence would probably close some of the gap, at a higher output cost.
+- **Caveats:** one rater and 20 sentences. The blinding was imperfect, because length and style can give away which pipeline wrote an explanation.
+
+## Final summary
+
+The test split is 1,607 sentences, 11% unfair, the realistic mix. Consistency, latency and explanation quality come from step 7. Rubric v1.2, pipeline B at threshold 0.6.
+
+| | A: LLM only | B: Jev → LLM explains flagged |
+|---|---|---|
+| Sentence precision / recall | 0.58 / **0.94** | 0.58 / 0.93 (0.52 / **0.95** at threshold 0.5) |
+| False-alarm rate | 8.2% | 8.0% (adjustable: 4.7%–13.2% across thresholds 0.4–0.8) |
+| **Cost per 100 sentences** | $0.051 | **$0.026** (Jev $0.0055 + explanations $0.020) |
+| Cost per 100k sentences | ~$51 | **~$26** |
+| Latency per 100 (both at 4 in flight) | **6.3 s** | 13.9 s (6.4 s on the full split, Jev at 8 in flight) |
+| **Consistency** (labels changed across 3 runs) | 5.0% | **0.75%** |
+| Explanation rating (1–5, n = 20) | 3.40 | **5.00** (length confound) |
+| Probability per flag for the UI | no | **yes** |
+| Failures | 0 (2 malformed replies in 4 runs, both fixed by retry) | 0 |
+
+**Verdict.** On accuracy the two pipelines tie, because both run on the same rubric. Jev + LLM wins on:
+- **cost:** about half, and the saving grows as fewer sentences are unfair
+- **consistency:** about 7× fewer label changes
+- **adjustable sensitivity:** the threshold, with a probability for each flag
+
+It loses on latency unless the explanation step is streamed. Most of the accuracy gains in this project came from **rubric work, not from model choice**: precision on the full split rose from 0.46 to 0.58 and the false-alarm rate fell from 13% to 8%. The remaining errors are mostly sentences the experts labelled inconsistently.
+
+**Caveats.**
+- UNFAIR-ToS is public, so the LLM may have seen it during training.
+- Parts of the rubric were influenced by test errors (change v3, arbitration v1, v1.2 liability). This makes both pipelines' test numbers slightly optimistic.
+- Pipeline A's accuracy is measured from one full-split run.
+- The labels reflect EU consumer law; nothing here is legal advice.
+
+## Remaining steps
+- **Later (optional):**
+  - contamination check on recent T&Cs
+  - Jev 1.14
+  - `{clause, context}` state
+  - a prompt asking A to state the consequence, to test the length confound
+  - streaming stage 3
+  - the UI (threshold slider + probabilities)
+
+## Open questions
+- Run-to-run variation: answered in step 7. 0.75% of sentences change label at 0.6, and the largest probability change was 0.09.
 - Related-but-different neighbours (e.g. a termination sentence next to a content-removal one) might confuse Jev more than unrelated ones did.
 - Possible experiment: put neighbours in a separate field, `{clause, context}`, with questions about `` `clause` `` only. This could help clauses that depend on definitions elsewhere.
 - Jev 1.14 exists. Rerun the eval with `JEV_MODEL=typesafe/jev-1.14` as a comparison.

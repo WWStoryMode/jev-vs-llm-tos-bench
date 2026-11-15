@@ -10,6 +10,21 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 - [`PLAN.md`](PLAN.md): implementation plan and build order
 - [`NOTES.md`](NOTES.md): what we learned from the Jev experiments
 
+## Results
+
+Full UNFAIR-ToS test split: 1,607 sentences, 11% unfair. Rubric v1.2, pipeline B at threshold 0.6. Details and caveats are in [NOTES.md → Final summary](NOTES.md#final-summary).
+
+| | A: LLM only | B: Jev → LLM explains flagged |
+|---|---|---|
+| Sentence precision / recall | 0.58 / 0.94 | 0.58 / 0.93 |
+| False-alarm rate | 8.2% | 8.0% (adjustable with the threshold) |
+| Cost per 100 sentences | $0.051 | **$0.026** |
+| Latency per 100 (both at 4 requests in flight) | **6.3 s** | 13.9 s |
+| Labels changed across 3 runs | 5.0% | **0.75%** |
+| Explanation rating (1–5, one rater, n = 20) | 3.40 | **5.00** (longer explanations, a confound) |
+
+Accuracy ties because both pipelines use the same rubric. Jev + LLM is half the cost, about 7× more consistent, and gives a probability for each flag. It is slower unless the explanation step is streamed.
+
 ## Status
 
 | Step | | |
@@ -21,7 +36,7 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 5 | Pipeline A (LLM only) on the same sample (sentence F1 0.92 vs Jev 0.91, at ~12× the cost) | ✅ |
 | 6 | Pipeline B step 3: the LLM explains only Jev-flagged sentences. On the full test split (11% unfair) B costs ~40% less than A ($0.030 vs $0.050 per 100); precision drops to ~0.5 for both | ✅ |
 | 6.5 | Rubric v1.2 + default threshold 0.6, tuned for precision on the full validation split. Full test: A and B now tie (sentence F1 0.72, P 0.58, recall 0.93–0.94, false-alarm rate 8%); B costs 49% less ($0.026 vs $0.051 per 100) | ✅ |
-| 7 | 3 consistency runs per pipeline (how many sentences change labels), latency at the same concurrency for both, manual 1–5 scores for a sample of explanations (`explanations_sample.csv`), final summary table | ⏳ next |
+| 7 | Consistency (labels changed across 3 runs: A 5.0%, Jev 0.75%), latency at equal concurrency, blind explanation ratings (A 3.4, B 5.0), final summary | ✅ |
 | Later | Optional: contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
 
 ## The two pipelines
@@ -65,6 +80,9 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 | `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
 | `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.6] [--explain-batch 10] [--no-explain]` | Run pipeline B (Jev, then LLM explanations for flagged sentences) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
 | `npm run eval -- --pipeline a [--file …] [--limit N] [--batch 40]` | Run pipeline A (LLM only) on batches of consecutive sentences and score it the same way |
+| `npm run consistency -- <dir1> <dir2> <dir3> [--out file.md]` | Compare repeated runs: share of sentences whose labels change, accuracy spread, Jev probability spread |
+| `npm run explanations-sample -- <A dir> <B dir> [--n 20]` | Build a blind CSV of paired explanations for 1–5 rating (answer key in a separate file) |
+| `npm run score-explanations [-- results/step7]` | Reveal which pipeline wrote each explanation and summarise the ratings |
 | `npm run test-metrics` | Check the metrics code against a hand-built example |
 | `npm run typecheck` | Run the TypeScript type check |
 
