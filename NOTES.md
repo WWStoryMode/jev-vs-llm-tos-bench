@@ -214,6 +214,14 @@ Of the 228 fair sentences, both flagged the same 17, the LLM alone flagged 4 and
 - `eval.ts`: `--pipeline a [--batch 40] [--concurrency 4]`. The summary reports malformed replies and skips the threshold sweep, because the LLM returns no probabilities.
 - `callLlm` now accepts `maxTokens`.
 
+### Prompt comparison
+Both prompts come from the same `rubric.json`. The README's "Jev prompt vs LLM prompt" section shows them side by side. The difference most relevant to the results: Jev sees one sentence on its own, while the LLM sees 40 neighbours. That accounts for both A-only catches (test-0566, test-0759). Jev also returns probabilities where the LLM returns yes or no, so only B can trade precision for recall with a threshold.
+
+## Remaining steps
+- **Step 6:** the LLM explains only the sentences Jev flagged, and is told which categories Jev flagged. Add that cost and time to B, then compare again with A, where both pipelines output labels plus explanations.
+- **Step 7:** 3 consistency runs per pipeline; latency at the same concurrency for both; manual 1–5 scores for a sample of explanations; final summary.
+- **Later (optional):** contamination check on recent T&Cs, Jev 1.14, `{clause, context}` state, UI.
+
 ## Open questions → check in step 6+
 - Run-to-run variation: `content_removal` gave 0.01 vs 0.02 on identical input. Probably small and harmless, but the consistency metric will show whether sentences near 0.5 flip label between runs.
 - Related-but-different neighbours (e.g. a termination sentence next to a content-removal one) might confuse Jev more than unrelated ones did.

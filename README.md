@@ -19,8 +19,9 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 3 | Tune `rubric.json` on validation (v1: sentence-level recall 0.97) | ✅ |
 | 4 | Pipeline B (Jev) on the held-out test sample (rubric v1.1: sentence recall 0.97, precision 0.86) | ✅ |
 | 5 | Pipeline A (LLM only) on the same sample (sentence F1 0.92 vs Jev 0.91, at ~12× the cost) | ✅ |
-| 6 | Explanations for pipeline B's flagged sentences | ⏳ next |
-| 7 | Consistency runs, latency, final comparison | — |
+| 6 | Pipeline B step 3: the LLM explains only the sentences Jev flagged (about 46%), and is told which categories Jev flagged. That cost and time are added to B's totals, so both pipelines produce labels plus explanations | ⏳ next |
+| 7 | 3 consistency runs per pipeline (how many sentences change labels), latency at the same concurrency for both, manual 1–5 scores for a sample of explanations (`explanations_sample.csv`), final summary table | — |
+| Later | Optional: contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
 
 ## The two pipelines
 
@@ -184,6 +185,60 @@ The request body and answers are the same either way. Through OpenRouter:
 - errors use OpenRouter's `{error:{code,message}}` format
 
 References: [Jev on OpenRouter](https://openrouter.ai/docs/guides/community/jev) · [TypeSafe API](https://docs.typesafe.ai/api) · [Primitives](https://docs.typesafe.ai/primitives) · [State](https://docs.typesafe.ai/concepts/state)
+
+---
+
+## Jev prompt vs LLM prompt
+
+Both pipelines build their prompts from **`src/rubric.json`**, so each category has the same definition in both. Only the wrapper differs:
+
+- **Jev:** `src/jev.ts` → `jevClassify()` sends the rubric questions as they are.
+- **LLM:** `src/llm.ts` → `rubricText()` and `SYSTEM_PROMPT` turn the same questions into prose. `` `clause` `` becomes "the sentence", `true` becomes "Yes when" and `false` becomes "No when".
+
+Here's what each one gets for one category (arbitration).
+
+**Jev**: one sentence per call, sent as JSON:
+```json
+{
+  "model": "typesafe/jev-1.13",
+  "state": { "clause": "<one sentence>" },
+  "questions": {
+    "arbitration": {
+      "type": "noul",
+      "instructions": "Does `clause` itself require disputes or claims to be resolved by arbitration instead of in court?",
+      "criteria": { "true": "imposes arbitration: ...", "false": "only describes how an arbitration works, ..." }
+    },
+    "...7 more categories": {}
+  }
+}
+```
+→ returns `{"arbitration": {"type": "noul", "noul": 0.97}, ...}`
+
+**LLM**: 40 consecutive sentences per call. The system prompt is prose:
+```
+You review Terms of Service sentences for potentially unfair terms under EU consumer law.
+...
+- arbitration
+  Question: Does the sentence itself require disputes or claims to be resolved by arbitration instead of in court?
+  Yes when: imposes arbitration: ...
+  No when: only describes how an arbitration works, ...
+...
+Respond with JSON only ... {"results": [{"id", "labels", "explanation"}]}
+Rules: include every id exactly once ...
+```
+The user message lists the sentences with their ids: `[test-0001] sentence…` / `[test-0002] sentence…` (40 lines).
+
+**Differences that matter for the benchmark:**
+
+| | Jev | LLM |
+|---|---|---|
+| Context | The sentence on its own | 40 neighbouring sentences, used only to resolve references like "those courts" |
+| Output | A probability for each category; we choose the threshold | Labels only (yes or no), plus an explanation |
+| Format rules | None; the API defines the structure | Spelled out in the prompt, checked with zod, retried once if malformed |
+| Role framing | None ("EU consumer law" doesn't appear) | One line saying it reviews terms "under EU consumer law" |
+| Calls | 1 per sentence (8 questions in each call) | 1 per 40 sentences |
+
+The context row explains the 2 unfair sentences that only the LLM caught in step 5: test-0566 ("those courts") and test-0759. See NOTES.md, step 5.
 
 ---
 
