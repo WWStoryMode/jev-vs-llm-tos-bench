@@ -1,4 +1,4 @@
-// LLM side: pipeline A (label + explain batches of sentences) and, later, explanations for pipeline B.
+// LLM side: pipeline A (label + explain batches of sentences) and pipeline B step 3 (explain what Jev flagged).
 // The prompt is built from rubric.json so both pipelines use IDENTICAL category definitions.
 import { z } from "zod";
 import { callLlm } from "./openrouter.js";
@@ -51,8 +51,8 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-export type BatchOutcome = {
-  labels: Map<string, LlmLabel>; // id -> parsed result (only valid ids)
+export type BatchOutcome<T = LlmLabel> = {
+  labels: Map<string, T>; // id -> parsed result (only valid ids)
   cost: number;
   ms: number;
   attempts: number;
@@ -61,37 +61,37 @@ export type BatchOutcome = {
 };
 
 /**
- * Label one batch of consecutive sentences. Validates with zod and checks that every id comes back exactly once.
- * A malformed reply is retried once; if it fails again the batch is reported as failed (counted, never as "fair").
+ * Shared call-validate-retry loop: send one batch, parse the reply with zod, check that every id comes back
+ * exactly once. A malformed reply is retried; if it still fails, the batch is reported as failed (never as "fair").
  */
-export async function llmLabelBatch(
-  batch: { id: string; text: string }[],
-  opts: { maxAttempts?: number } = {},
-): Promise<BatchOutcome> {
-  const maxAttempts = opts.maxAttempts ?? 2;
-  const user = batch.map((s) => `[${s.id}] ${s.text.trim()}`).join("\n");
+async function callBatch<T extends { id: string }>(
+  system: string,
+  user: string,
+  ids: string[],
+  schema: z.ZodType<{ results: T[] }>,
+  opts: { maxAttempts: number; maxTokens: number },
+): Promise<BatchOutcome<T>> {
   let cost = 0;
   let ms = 0;
   let malformed = 0;
   let lastError = "";
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     const { data, ms: callMs } = await callLlm(
       [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `Label these ${batch.length} sentences:\n\n${user}` },
+        { role: "system", content: system },
+        { role: "user", content: user },
       ],
-      { json: true, temperature: 0, maxTokens: 4000 + batch.length * 80 },
+      { json: true, temperature: 0, maxTokens: opts.maxTokens },
     );
     cost += data.usage.cost ?? 0;
     ms += callMs;
     try {
       const reply = data.choices[0]?.message.content ?? "";
-      const parsed = ResponseSchema.parse(extractJson(reply));
+      const parsed = schema.parse(extractJson(reply));
       const byId = new Map(parsed.results.map((r) => [r.id, r]));
-      const missing = batch.filter((s) => !byId.has(s.id)).map((s) => s.id);
-      if (missing.length || parsed.results.length !== batch.length) {
-        throw new Error(`ids mismatch: ${parsed.results.length} results for ${batch.length} sentences; missing ${missing.slice(0, 5).join(", ")}`);
+      const missing = ids.filter((id) => !byId.has(id));
+      if (missing.length || parsed.results.length !== ids.length) {
+        throw new Error(`ids mismatch: ${parsed.results.length} results for ${ids.length} sentences; missing ${missing.slice(0, 5).join(", ")}`);
       }
       return { labels: byId, cost, ms, attempts: attempt, malformed };
     } catch (err) {
@@ -99,5 +99,50 @@ export async function llmLabelBatch(
       lastError = String(err).slice(0, 500);
     }
   }
-  return { labels: new Map(), cost, ms, attempts: maxAttempts, malformed, error: lastError };
+  return { labels: new Map(), cost, ms, attempts: opts.maxAttempts, malformed, error: lastError };
+}
+
+/** Pipeline A: label + explain one batch of consecutive sentences. */
+export function llmLabelBatch(batch: { id: string; text: string }[], opts: { maxAttempts?: number } = {}): Promise<BatchOutcome> {
+  const user = `Label these ${batch.length} sentences:\n\n${batch.map((s) => `[${s.id}] ${s.text.trim()}`).join("\n")}`;
+  return callBatch(SYSTEM_PROMPT, user, batch.map((s) => s.id), ResponseSchema, {
+    maxAttempts: opts.maxAttempts ?? 2,
+    maxTokens: 4000 + batch.length * 80,
+  });
+}
+
+// ---------- pipeline B step 3: explain what Jev flagged ----------
+
+export const EXPLAIN_PROMPT = `You review Terms of Service sentences for potentially unfair terms under EU consumer law.
+
+A fast classifier has already flagged each sentence below with one or more of these categories:
+${rubricText()}
+
+For each sentence, write a short explanation for a consumer of why the flagged categories make it potentially unfair and to whom. Also say whether you agree that at least one flagged category really applies to the sentence itself.
+
+Sentences are flagged ones only, not consecutive, so judge each on its own.
+
+Respond with JSON only, no prose, in exactly this shape:
+{"results": [{"id": "<id>", "agree": true, "explanation": "<one short sentence>"}]}
+
+Rules:
+- Include every id exactly once, in the given order.
+- "explanation": one short sentence about the flagged categories. If you disagree, say briefly why the sentence may be fair.`;
+
+const ExplainSchema = z.object({
+  results: z.array(z.object({ id: z.string(), agree: z.boolean(), explanation: z.string() })),
+});
+export type LlmExplanation = z.infer<typeof ExplainSchema>["results"][number];
+
+/** Pipeline B step 3: explain a batch of Jev-flagged sentences, given Jev's categories. Labels stay Jev's. */
+export function llmExplainBatch(
+  batch: { id: string; text: string; categories: string[] }[],
+  opts: { maxAttempts?: number } = {},
+): Promise<BatchOutcome<LlmExplanation>> {
+  const lines = batch.map((s) => `[${s.id}] (flagged: ${s.categories.join(", ")}) ${s.text.trim()}`);
+  const user = `Explain these ${batch.length} flagged sentences:\n\n${lines.join("\n")}`;
+  return callBatch(EXPLAIN_PROMPT, user, batch.map((s) => s.id), ExplainSchema, {
+    maxAttempts: opts.maxAttempts ?? 2,
+    maxTokens: 2000 + batch.length * 80,
+  });
 }
