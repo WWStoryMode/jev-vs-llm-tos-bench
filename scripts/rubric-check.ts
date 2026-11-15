@@ -9,7 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { callJev, type JevQuestion } from "../src/openrouter.js";
 import rubricFile from "../src/rubric.json" with { type: "json" };
-import type { Sentence } from "./inspect-data.js";
+import type { Sentence } from "../src/data.js";
 
 const args = process.argv.slice(2);
 const flag = (name: string, fallback: string) => {

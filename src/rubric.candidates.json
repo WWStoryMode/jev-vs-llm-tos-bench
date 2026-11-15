@@ -60,5 +60,23 @@
         "false": "The clause is about something else, such as the user's own obligations, licences the user grants, or the service in general."
       }
     }
+  },
+  "arbitration": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` itself require disputes or claims to be resolved by arbitration instead of in court?",
+      "criteria": {
+        "true": "The clause imposes arbitration: disputes or claims must or will be resolved by binding arbitration, the provider can force arbitration, or the user gives up going to court or a jury trial in favour of arbitration.",
+        "false": "The clause only describes how an arbitration works, such as its rules, the arbitrator, fees, location, claim amounts, the governing arbitration act, or exceptions, without itself imposing arbitration; or it allows court proceedings; or it is about something else."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Does `clause` make arbitration the required way for the user to resolve disputes with the provider?",
+      "criteria": {
+        "true": "The clause says disputes or claims must or will go to binding arbitration, or that the user waives court or jury trial in favour of arbitration.",
+        "false": "The clause gives procedural details of an arbitration, or is about something else."
+      }
+    }
   }
 }

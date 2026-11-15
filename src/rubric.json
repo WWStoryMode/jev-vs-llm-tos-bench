@@ -1,5 +1,5 @@
 {
-  "_note": "v1. One noul question per UNFAIR-ToS category, shared verbatim by both pipelines. unilateral_change = v3 (tuned on test sample); unilateral_termination = v1 and content_removal = v1 (tuned on validation); other 5 v0 (untuned). Keys are our ids; dataset index mapping comes from data/label_names.json.",
+  "_note": "v1.1. One noul question per UNFAIR-ToS category, shared verbatim by both pipelines. unilateral_change = v3 (tuned on test sample); unilateral_termination v1, content_removal v1 (tuned on validation); arbitration v1 (tuned on validation+train arbitration sentences, AFTER seeing v1 test errors); other 4 v0. Keys are our ids; dataset index mapping comes from data/label_names.json.",
   "limitation_of_liability": {
     "type": "noul",
     "instructions": "Does `clause` exclude or limit the provider's liability for damages, losses, or harm to the user?",
@@ -58,10 +58,10 @@
   },
   "arbitration": {
     "type": "noul",
-    "instructions": "Does `clause` require or allow disputes to be resolved by arbitration instead of in court?",
+    "instructions": "Does `clause` itself require disputes or claims to be resolved by arbitration instead of in court?",
     "criteria": {
-      "true": "The clause mandates arbitration or lets the provider force arbitration.",
-      "false": "The clause allows court proceedings, or is about something else."
+      "true": "The clause imposes arbitration: disputes or claims must or will be resolved by binding arbitration, the provider can force arbitration, or the user gives up going to court or a jury trial in favour of arbitration.",
+      "false": "The clause only describes how an arbitration works, such as its rules, the arbitrator, fees, location, claim amounts, the governing arbitration act, or exceptions, without itself imposing arbitration; or it allows court proceedings; or it is about something else."
     }
   }
 }

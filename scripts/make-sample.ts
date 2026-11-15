@@ -5,7 +5,7 @@
 //
 // Rows are re-sorted by original index so batches keep document order (the LLM sees neighbours).
 import { readFileSync, writeFileSync } from "node:fs";
-import type { Sentence } from "./inspect-data.js";
+import type { Sentence } from "../src/data.js";
 
 const size = Number(process.argv[2] ?? 400);
 const seed = Number(process.argv[3] ?? 42);
