@@ -18,8 +18,9 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 2 | Export UNFAIR-ToS test + validation splits, build samples | ✅ |
 | 3 | Tune `rubric.json` on validation (v1: sentence-level recall 0.97) | ✅ |
 | 4 | Pipeline B (Jev) on the held-out test sample (rubric v1.1: sentence recall 0.97, precision 0.86) | ✅ |
-| 5 | Pipeline A (LLM only) on the same sample | ⏳ next |
-| 6–7 | Explanations, comparison | — |
+| 5 | Pipeline A (LLM only) on the same sample (sentence F1 0.92 vs Jev 0.91, at ~12× the cost) | ✅ |
+| 6 | Explanations for pipeline B's flagged sentences | ⏳ next |
+| 7 | Consistency runs, latency, final comparison | — |
 
 ## The two pipelines
 
@@ -60,7 +61,8 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 | `npm run inspect-data [-- <regex>] [--split validation]` | Show class balance, or search sentences and show their expert labels |
 | `npm run rubric-check -- <category> [regex] [--file …]` | Compare a question with its candidate rewordings (`src/rubric.candidates.json`) |
 | `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
-| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5]` | Run a pipeline and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
+| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5]` | Run pipeline B (Jev) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
+| `npm run eval -- --pipeline a [--file …] [--limit N] [--batch 40]` | Run pipeline A (LLM only) on batches of consecutive sentences and score it the same way |
 | `npm run test-metrics` | Check the metrics code against a hand-built example |
 | `npm run typecheck` | Run the TypeScript type check |
 

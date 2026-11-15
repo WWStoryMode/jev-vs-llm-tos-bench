@@ -159,7 +159,62 @@ Result folders:
 - `scripts/test-metrics.ts` checks the metrics against a hand-built example with known answers.
 - First sign of run-to-run variation: re-running validation moved one sentence across 0.5 (52 → 53 sentence-level false alarms).
 
-## Open questions → check in step 5+
+## Pipeline A (LLM only) vs pipeline B (Jev): test results (step 5)
+
+Pipeline A sends `anthropic/claude-sonnet-5.5` batches of 40 consecutive test sentences, with a system prompt built word for word from `rubric.json` v1.1 (`` `clause` `` becomes "the sentence"). The LLM returns `{id, labels, explanation}` per sentence, validated with zod. It may use neighbouring sentences only to resolve references. Same 400 test sentences, same scoring as pipeline B.
+
+Result folder: `results/2026-11-15T11-21-30_A_anthropic-claude-sonnet-5-5/` (B v1.1: `results/2026-11-15T11-07-59_B_typesafe-jev-1-13/`).
+
+### Head to head
+
+| test, 400 sentences | **A: LLM only** | **B: Jev v1.1 @ 0.5** | B: Jev @ 0.6 |
+|---|---|---|---|
+| Sentence-level recall | 0.95 (8 missed) | **0.97** (6 missed) | 0.95 |
+| Sentence-level precision | **0.89** (21 of 228 fair flagged) | 0.86 (26 flagged) | 0.88 |
+| Sentence-level F1 / F2 | **0.92** / 0.94 | 0.91 / 0.94 | 0.92 / 0.94 |
+| Micro F1 | **0.86** | 0.85 | 0.87 |
+| Macro F1 | **0.87** | 0.85 | — |
+| Exact label-set match | **87.0%** | 84.75% | — |
+| Cost per 100 sentences | $0.059 | **$0.0050** (~12× cheaper) | |
+| Cost per 100k sentences | $59.14 | **$5.02** | |
+| Latency per 100 sentences | 6.2 s (10 batches, 4 parallel) | **3.5 s** (400 calls, 8 parallel) | |
+| Malformed or failed | 0 malformed replies / 10 calls | 0 failures / 400 calls | |
+| Explanations | yes, for every flag | no (added in step 6) | |
+| Adjustable sensitivity | no: fixed labels, no probabilities | yes: probability per category | |
+
+Per category, the LLM is stronger on jurisdiction (F1 1.00 vs 0.97), arbitration (0.86 vs 0.80) and change (0.80 vs 0.74). Jev is stronger on contract-by-using recall (1.00 vs 0.83) and termination recall (0.92 vs 0.87).
+
+**Conclusion:** for *detecting* unfair clauses, the two are equally accurate within noise. At threshold 0.6, Jev matches the LLM at sentence level for about 1/12 of the cost, and it supports a sensitivity slider. The LLM adds explanations and a small benefit from context.
+
+### Sentence-by-sentence overlap
+
+| 172 unfair sentences | |
+|---|---|
+| caught by both | 162 |
+| caught only by the LLM | 2 |
+| caught only by Jev | 4 |
+| missed by both | 4 |
+
+Of the 228 fair sentences, both flagged the same 17, the LLM alone flagged 4 and Jev alone flagged 9.
+
+- **The LLM's wins are the predicted context cases.** test-0566 "consent to the exclusive jurisdiction of **those courts**" (Jev 0.16) needs the previous sentence to know which courts. test-0759 "limit how you connect" (Jev 0.39) is the other. This supports the brief's hypothesis that the LLM does better where meaning depends on other sentences, but at 2 of 172 the effect is small.
+- **Jev's wins are mostly contract-by-using phrasings** that the LLM read more strictly: "you agree to comply… when accessing or using our services" (Jev 0.92), "in exchange for being enabled to use the service, you agree…" (0.74), test-0585 (0.84). The fourth is test-1141, "if we make a significant change, we'll notify you" (0.79).
+- **Both missed** test-0653 and test-0940 (likely label noise), plus test-1093 (arbitration) and test-1334 (liability).
+
+### Caveats (they point in opposite directions)
+- **Contamination favours the LLM.** UNFAIR-ToS has been public since 2019, so Sonnet may have seen these sentences in training. The planned check on recent T&Cs labelled by the group would test this.
+- **Tuning on test favours Jev, partly.** The `unilateral_change` v3 and arbitration v1 wordings were influenced by test sentences. Pipeline A uses the same wording, so it shares some of that benefit.
+- **Latency isn't like for like yet:** batched LLM calls (4 parallel) against single Jev calls (8 parallel). Step 7 should time both under comparable setups.
+- **One run each:** step 7's three repeat runs will measure consistency.
+- **Explanations:** pipeline A writes an explanation only for flagged sentences (`""` for fair ones), which keeps its output cost down.
+
+### Engineering
+- `src/llm.ts`: builds the prompt from the rubric, extracts JSON (tolerating code fences), validates with zod (labels must be one of the 8 categories; every id exactly once, in order), and retries a malformed reply once. A batch that still fails counts as failed, never as fair.
+- `runA()` in `src/pipelines.ts` returns the same result format as `runB`, so both are scored by the same code.
+- `eval.ts`: `--pipeline a [--batch 40] [--concurrency 4]`. The summary reports malformed replies and skips the threshold sweep, because the LLM returns no probabilities.
+- `callLlm` now accepts `maxTokens`.
+
+## Open questions → check in step 6+
 - Run-to-run variation: `content_removal` gave 0.01 vs 0.02 on identical input. Probably small and harmless, but the consistency metric will show whether sentences near 0.5 flip label between runs.
 - Related-but-different neighbours (e.g. a termination sentence next to a content-removal one) might confuse Jev more than unrelated ones did.
 - Possible experiment: put neighbours in a separate field, `{clause, context}`, with questions about `` `clause` `` only. This could help clauses that depend on definitions elsewhere.

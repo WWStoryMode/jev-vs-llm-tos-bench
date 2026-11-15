@@ -1,6 +1,7 @@
 // Pipelines produce a common result shape so eval.ts can score and compare them identically.
 import type { Sentence } from "./data.js";
 import { flagged, jevClassify } from "./jev.js";
+import { llmLabelBatch } from "./llm.js";
 import { pool } from "./pool.js";
 
 export type SentenceResult = {
@@ -20,7 +21,8 @@ export type PipelineRun = {
   cost: number; // USD, sum of usage.cost
   wallMs: number; // wall-clock for the whole run
   calls: number;
-  failures: number;
+  failures: number; // sentences with no usable prediction
+  malformed?: number; // LLM replies that failed JSON/zod/id validation (incl. ones fixed by a retry)
 };
 
 export type PipelineBOptions = { threshold: number; concurrency: number; onProgress?: (done: number) => void };
@@ -49,5 +51,51 @@ export async function runB(sentences: Sentence[], opts: PipelineBOptions): Promi
     wallMs: performance.now() - started,
     calls: sentences.length,
     failures: results.filter((r) => r.failed).length,
+  };
+}
+
+export type PipelineAOptions = { batchSize: number; concurrency: number; onProgress?: (doneSentences: number) => void };
+
+/** Pipeline A: LLM labels + explains batches of consecutive sentences (document order kept, so it sees neighbours). */
+export async function runA(sentences: Sentence[], opts: PipelineAOptions): Promise<PipelineRun> {
+  const batches: Sentence[][] = [];
+  for (let i = 0; i < sentences.length; i += opts.batchSize) batches.push(sentences.slice(i, i + opts.batchSize));
+
+  let cost = 0;
+  let calls = 0;
+  let malformed = 0;
+  let done = 0;
+  const started = performance.now();
+  const perBatch = await pool(batches, opts.concurrency, async (batch): Promise<SentenceResult[]> => {
+    try {
+      const out = await llmLabelBatch(batch.map((s) => ({ id: s.id, text: s.text })));
+      cost += out.cost;
+      calls += out.attempts;
+      malformed += out.malformed;
+      return batch.map((s) => {
+        const r = out.labels.get(s.id);
+        const base = { id: s.id, text: s.text, expert: s.categories };
+        return r
+          ? { ...base, predicted: r.labels, explanation: r.explanation }
+          : { ...base, predicted: [], failed: true, error: out.error ?? "missing from reply" };
+      });
+    } catch (err) {
+      // HTTP failure after retries: the whole batch fails
+      calls++;
+      return batch.map((s) => ({ id: s.id, text: s.text, expert: s.categories, predicted: [], failed: true, error: String(err) }));
+    } finally {
+      done += batch.length;
+      opts.onProgress?.(done);
+    }
+  });
+  const results = perBatch.flat();
+  return {
+    pipeline: "A",
+    results,
+    cost,
+    wallMs: performance.now() - started,
+    calls,
+    failures: results.filter((r) => r.failed).length,
+    malformed,
   };
 }
