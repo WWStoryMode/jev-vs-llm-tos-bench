@@ -397,19 +397,21 @@ The sample is 20 sentences from the full-test runs, all explained by both pipeli
 
 The test split is 1,607 sentences, 11% unfair, the realistic mix. Consistency, latency and explanation quality come from step 7. Rubric v1.2, pipeline B at threshold 0.6.
 
-| | A: LLM only | B: Jev → LLM explains flagged |
-|---|---|---|
-| Sentence precision / recall | 0.58 / **0.94** | 0.58 / 0.93 (0.52 / **0.95** at threshold 0.5) |
-| False-alarm rate | 8.2% | 8.0% (adjustable: 4.7%–13.2% across thresholds 0.4–0.8) |
-| **Cost per 100 sentences** | $0.051 | **$0.026** (Jev $0.0055 + explanations $0.020) |
-| Cost per 100k sentences | ~$51 | **~$26** |
-| Latency per 100 (both at 4 in flight) | **6.3 s** | 13.9 s (6.4 s on the full split, Jev at 8 in flight) |
-| **Consistency** (labels changed across 3 runs) | 5.0% | **0.75%** |
-| Explanation rating (1–5, n = 20) | 3.40 | **5.00** (length confound) |
-| Probability per flag for the UI | no | **yes** |
-| Failures | 0 (2 malformed replies in 4 runs, both fixed by retry) | 0 |
+| | A: LLM only | B without LLM (Jev only) | B: Jev → LLM explains flagged |
+|---|---|---|---|
+| Sentence precision / recall | 0.58 / **0.94** | 0.58 / 0.93 (0.52 / **0.95** at threshold 0.5) | same as Jev only (the LLM step doesn't change labels) |
+| False-alarm rate | 8.2% | 8.0% (adjustable: 4.7%–13.2% across thresholds 0.4–0.8) | same as Jev only |
+| **Cost per 100 sentences** | $0.051 | **$0.0055** | $0.026 (Jev $0.0055 + explanations $0.020) |
+| Cost per 100k sentences | ~$51 | **~$5.50** | ~$26 |
+| Latency per 100 (all at 4 in flight) | **6.3 s** | 7.0 s (4.0 s on the full split at 8 in flight) | 13.9 s (6.4 s on the full split, Jev at 8 in flight) |
+| **Consistency** (labels changed across 3 runs) | 5.0% | **0.75%** | 0.75% for labels (explanations not measured across runs) |
+| Explanations | yes, rated 3.40 (1–5, n = 20) | none | yes, rated **5.00** (length confound) |
+| Probability per flag for the UI | no | **yes** | **yes** |
+| Failures | 0 (2 malformed replies in 4 runs, both fixed by retry) | 0 | 0 |
 
-**Verdict.** On accuracy the two pipelines tie, because both run on the same rubric. Jev + LLM wins on:
+The Jev-only figures come from the 3 step 7 consistency runs (400 sample) and from the Jev stage of the step 6.5 full-split run.
+
+**Verdict.** On accuracy the two pipelines tie, because both run on the same rubric. When no explanations are needed, Jev alone gives the same accuracy at about a tenth of A's cost. That suits a first-pass filter, a count of risky clauses, or a UI that explains a flag only when the user opens it. Jev + LLM wins on:
 - **cost:** about half, and the saving grows as fewer sentences are unfair
 - **consistency:** about 7× fewer label changes
 - **adjustable sensitivity:** the threshold, with a probability for each flag

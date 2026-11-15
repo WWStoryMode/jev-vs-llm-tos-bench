@@ -14,16 +14,16 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 
 Full UNFAIR-ToS test split: 1,607 sentences, 11% unfair. Rubric v1.2, pipeline B at threshold 0.6. Details and caveats are in [NOTES.md → Final summary](NOTES.md#final-summary).
 
-| | A: LLM only | B: Jev → LLM explains flagged |
-|---|---|---|
-| Sentence precision / recall | 0.58 / 0.94 | 0.58 / 0.93 |
-| False-alarm rate | 8.2% | 8.0% (adjustable with the threshold) |
-| Cost per 100 sentences | $0.051 | **$0.026** |
-| Latency per 100 (both at 4 requests in flight) | **6.3 s** | 13.9 s |
-| Labels changed across 3 runs | 5.0% | **0.75%** |
-| Explanation rating (1–5, one rater, n = 20) | 3.40 | **5.00** (longer explanations, a confound) |
+| | A: LLM only | B without LLM (Jev only) | B: Jev → LLM explains flagged |
+|---|---|---|---|
+| Sentence precision / recall | 0.58 / 0.94 | 0.58 / 0.93 | 0.58 / 0.93 |
+| False-alarm rate | 8.2% | 8.0% (adjustable with the threshold) | 8.0% (adjustable with the threshold) |
+| Cost per 100 sentences | $0.051 | **$0.0055** | $0.026 |
+| Latency per 100 (all at 4 requests in flight) | **6.3 s** | 7.0 s | 13.9 s |
+| Labels changed across 3 runs | 5.0% | **0.75%** | **0.75%** |
+| Explanations | yes, rated 3.40 | none | yes, rated **5.00** (longer explanations, a confound) |
 
-Accuracy ties because both pipelines use the same rubric. Jev + LLM is half the cost, about 7× more consistent, and gives a probability for each flag. It is slower unless the explanation step is streamed.
+Accuracy ties because all three use the same rubric; the LLM step in B never changes Jev's labels. Jev alone gives that accuracy at about a tenth of A's cost, which suits a first-pass filter or a count of risky clauses. Adding LLM explanations for the flagged sentences brings B to half of A's cost. B is about 7× more consistent than A and gives a probability for each flag. With explanations it is slower unless that step is streamed. In a UI, Jev's flags could show straight away, with an explanation fetched only when the user opens a flag.
 
 ## Status
 
