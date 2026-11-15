@@ -15,9 +15,10 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | Step | | |
 |---|---|---|
 | 1 | Jev playground + learning notes | ✅ |
-| 2 | Export UNFAIR-ToS test set, 200-sentence sample | ⏳ next |
-| 3 | Finalise `rubric.json` | draft v0 |
-| 4–7 | Pipeline B (Jev), pipeline A (LLM), explanations, comparison | — |
+| 2 | Export UNFAIR-ToS test + validation splits, build samples | ✅ |
+| 3 | Tune `rubric.json` on validation (v1: sentence-level recall 0.97) | ✅ |
+| 4 | Pipeline B (Jev) on the held-out test sample | ⏳ next |
+| 5–7 | Pipeline A (LLM), explanations, comparison | — |
 
 ## The two pipelines
 
@@ -53,9 +54,14 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 |---|---|
 | `npm run play -- <experiment>` | Run a Jev experiment: `hello`, `state-shape`, `fanout`, `criteria-wording`, `types`, `context-noise` |
 | `npm run llm-hello` | Make one LLM call and print `usage.cost` |
+| `npm run export-data [-- validation]` | Download an UNFAIR-ToS split to `data/` (default: test) |
+| `npm run make-sample [-- <size> <seed> <split>]` | Build a seeded sample: all unfair sentences plus random fair ones |
+| `npm run inspect-data [-- <regex>] [--split validation]` | Show class balance, or search sentences and show their expert labels |
+| `npm run rubric-check -- <category> [regex] [--file …]` | Compare a question with its candidate rewordings (`src/rubric.candidates.json`) |
+| `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
 | `npm run typecheck` | Run the TypeScript type check |
 
-Playground runs save the raw request and response to `results/playground/`, which is gitignored.
+Playground and rubric-eval runs save raw output to `results/`, which is gitignored. Tune the rubric on `data/val_sample_530.jsonl` (validation). Keep `data/sample_400.jsonl` (test) for the final comparison.
 
 ---
 
@@ -94,9 +100,9 @@ We ask 8 **noul** (yes/no) questions, one per UNFAIR-ToS category, all in **one 
 | id | What `instructions` asks about `clause` |
 |---|---|
 | `limitation_of_liability` | Does it exclude or limit the provider's liability for damages, losses or harm? |
-| `unilateral_termination` | Can the provider suspend or terminate the account or service at its own discretion? |
-| `unilateral_change` | Can the provider change the terms or service without the user's agreement? |
-| `content_removal` | Can the provider delete or remove the user's content at its own discretion? |
+| `unilateral_termination` | Can the provider suspend, terminate or revoke the account, access, licence or service, including for breach, or does a violation end the user's rights automatically? |
+| `unilateral_change` | Can the provider alter the terms, prices, fees, features, data or usage limits by its own decision, even with notice? |
+| `content_removal` | Can the provider remove, delete, block or take away the user's content or account items (usernames, data, virtual or purchased items), or does the user lose them? |
 | `contract_by_using` | Is the user bound simply by using or accessing the service? |
 | `choice_of_law` | Does it state which country's or state's law governs the agreement? |
 | `jurisdiction` | Does it state which courts or which place disputes must be brought in? |
@@ -134,6 +140,8 @@ Jev answers quickly and literally, without reasoning about what you meant. In pr
 | **Expect Jev to apply your wording exactly.** | "Changes require the user's **consent**": Jev rated a notice-plus-right-to-leave clause 0.92, because notice isn't consent (NOTES #6). If an answer looks wrong, check the wording first. |
 | **Use one noul per category, not one `choice`.** | `choice` puts all its probability on one option. On a clause with both termination and liability terms, it gave termination 1.0 and liability 0 (NOTES #7). |
 | **Do counting, dates and arithmetic in code.** | Jev is weak at these. |
+| **List concrete forms, not abstract definitions.** | Termination worded as "suspend, terminate, close, revoke… for breach, violation, fraud, or inactivity" reached F1 0.85. The same idea in general terms stayed at 0.71 (NOTES, step 3). |
+| **Check the criteria for wrong assumptions first.** | v0 said termination "for a justified reason" was fair, which isn't the experts' rule. Jev followed the wording and missed 20 of 59 terminations (NOTES, step 3). |
 
 ### 5. The response
 

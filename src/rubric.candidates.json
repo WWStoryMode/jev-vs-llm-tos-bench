@@ -1,0 +1,64 @@
+{
+  "unilateral_change": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` give the provider the right to change the terms, the service, its features, or its prices?",
+      "criteria": {
+        "true": "The provider can change the terms, service, features, or prices by its own decision, even if it promises to give notice first.",
+        "false": "The clause only describes how or when users are notified of changes, says changes need the user's consent, or is about something else."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Does `clause` give the provider the right to change the terms, prices, or features, or to limit what the user can do, by its own decision?",
+      "criteria": {
+        "true": "The provider can change the terms, prices, features, or catalog data, or restrict or limit the user's use, at its own discretion, even if it promises notice first.",
+        "false": "The clause is about stopping, discontinuing, or terminating the service or accounts; says continued use means accepting the terms; only describes how or when users are notified; says changes need the user's consent; or is about something else."
+      }
+    },
+    "v3": {
+      "type": "noul",
+      "instructions": "Does `clause` let the provider alter what the service or agreement is (its terms, prices, fees, features, data, or usage limits) by its own decision?",
+      "criteria": {
+        "true": "The provider may rewrite the terms, change prices or fees, add or remove features, revise data, or set new limits on how the service can be used, whenever it decides, even if it gives notice first.",
+        "false": "The clause is mainly about cutting off a user: suspending, revoking, closing, or terminating access or accounts, or ending the service altogether. Or it is mainly about something else, such as continued use counting as acceptance, how users are notified, or liability."
+      }
+    }
+  },
+  "unilateral_termination": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` give the provider the right to suspend, terminate, revoke, or cut off the user's account, access, license, purchases, or the service, or say the user's rights end automatically?",
+      "criteria": {
+        "true": "The provider may suspend, terminate, close, revoke, deny, or end the user's account, access, license, purchases, or the service, whether for any reason or for reasons such as breach, violation, fraud, or inactivity; or a violation automatically ends the user's rights.",
+        "false": "The clause only describes what happens after termination, limits the provider's liability, is a section heading, or is about something else."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Can the provider suspend, terminate, or revoke the user's account, access, or license under `clause`, for any reason including a breach of the terms?",
+      "criteria": {
+        "true": "The provider has the power to suspend, terminate, close, or revoke the user's account, access, license, or the service, including as a response to a breach, violation, or inactivity.",
+        "false": "Only the user can end the agreement, or the clause is about something else."
+      }
+    }
+  },
+  "content_removal": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` let the provider remove, delete, block, or take away the user's content or account items, or say the user loses them?",
+      "criteria": {
+        "true": "The provider may remove, delete, block, disable, reclaim, or change user content, posts, listings, reviews, usernames, data, virtual items, or purchased items, whether at its discretion or because of a violation; or the user loses such content or items when the account ends.",
+        "false": "The clause is about something else, such as the user's own obligations, licences the user grants, or the service in general."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Does `clause` let the provider remove, delete, block, or take away the user's content or account items?",
+      "criteria": {
+        "true": "The provider may remove, delete, block, disable, reclaim, or change user content, posts, listings, reviews, usernames, data, virtual items, or purchased items, whether at its discretion or because of a violation.",
+        "false": "The clause is about something else, such as the user's own obligations, licences the user grants, or the service in general."
+      }
+    }
+  }
+}

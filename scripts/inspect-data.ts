@@ -1,16 +1,21 @@
 // Quick look at the exported test set: class balance + example sentences.
-// Run:  npm run inspect-data                 -> per-category counts
-//       npm run inspect-data -- notice       -> sentences matching a word, with their expert labels
+// Run:  npm run inspect-data                       -> per-category counts (test split)
+//       npm run inspect-data -- notice             -> sentences matching a word, with their expert labels
+//       npm run inspect-data -- notice --split validation
 import { readFileSync } from "node:fs";
 
 export type Sentence = { id: string; idx: number; text: string; labels: number[]; categories: string[] };
 
-const rows: Sentence[] = readFileSync("data/unfair_tos_test.jsonl", "utf8")
+const argv = process.argv.slice(2);
+const splitAt = argv.indexOf("--split");
+const split = splitAt >= 0 ? argv.splice(splitAt, 2)[1]! : "test";
+
+const rows: Sentence[] = readFileSync(`data/unfair_tos_${split}.jsonl`, "utf8")
   .trim()
   .split("\n")
   .map((l) => JSON.parse(l));
 
-const search = process.argv[2];
+const search = argv[0];
 
 if (!search) {
   const unfair = rows.filter((r) => r.labels.length > 0);

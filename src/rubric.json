@@ -1,5 +1,5 @@
 {
-  "_note": "DRAFT v0. One noul question per UNFAIR-ToS category. Shared verbatim by both pipelines. Keys are our own ids; the mapping to dataset label indices is built from data/label_names.json (step 2), never hard-coded.",
+  "_note": "v1. One noul question per UNFAIR-ToS category, shared verbatim by both pipelines. unilateral_change = v3 (tuned on test sample); unilateral_termination = v1 and content_removal = v1 (tuned on validation); other 5 v0 (untuned). Keys are our ids; dataset index mapping comes from data/label_names.json.",
   "limitation_of_liability": {
     "type": "noul",
     "instructions": "Does `clause` exclude or limit the provider's liability for damages, losses, or harm to the user?",
@@ -10,26 +10,26 @@
   },
   "unilateral_termination": {
     "type": "noul",
-    "instructions": "Does `clause` let the provider suspend or terminate the user's account or the service at its own discretion?",
+    "instructions": "Does `clause` give the provider the right to suspend, terminate, revoke, or cut off the user's account, access, license, purchases, or the service, or say the user's rights end automatically?",
     "criteria": {
-      "true": "The provider can end or suspend the service or account without the user's agreement, with or without cause.",
-      "false": "Termination needs a specific, justified reason or the user's agreement, or the clause is about something else."
+      "true": "The provider may suspend, terminate, close, revoke, deny, or end the user's account, access, license, purchases, or the service, whether for any reason or for reasons such as breach, violation, fraud, or inactivity; or a violation automatically ends the user's rights.",
+      "false": "The clause only describes what happens after termination, limits the provider's liability, is a section heading, or is about something else."
     }
   },
   "unilateral_change": {
     "type": "noul",
-    "instructions": "Does `clause` let the provider change the terms or the service on its own, without the user's agreement?",
+    "instructions": "Does `clause` let the provider alter what the service or agreement is (its terms, prices, fees, features, data, or usage limits) by its own decision?",
     "criteria": {
-      "true": "The provider can modify the terms or service unilaterally.",
-      "false": "Changes require the user's consent, or the clause is about something else."
+      "true": "The provider may rewrite the terms, change prices or fees, add or remove features, revise data, or set new limits on how the service can be used, whenever it decides, even if it gives notice first.",
+      "false": "The clause is mainly about cutting off a user: suspending, revoking, closing, or terminating access or accounts, or ending the service altogether. Or it is mainly about something else, such as continued use counting as acceptance, how users are notified, or liability."
     }
   },
   "content_removal": {
     "type": "noul",
-    "instructions": "Does `clause` let the provider delete or remove the user's content at its own discretion?",
+    "instructions": "Does `clause` let the provider remove, delete, block, or take away the user's content or account items, or say the user loses them?",
     "criteria": {
-      "true": "The provider can remove, delete, or block user content without a specific, justified reason or without notice.",
-      "false": "Content removal is not covered, or needs a specific reason and notice, or the clause is about something else."
+      "true": "The provider may remove, delete, block, disable, reclaim, or change user content, posts, listings, reviews, usernames, data, virtual items, or purchased items, whether at its discretion or because of a violation; or the user loses such content or items when the account ends.",
+      "false": "The clause is about something else, such as the user's own obligations, licences the user grants, or the service in general."
     }
   },
   "contract_by_using": {
