@@ -1,6 +1,6 @@
 // Evaluation entry point: run a pipeline on a sample, score against expert labels, write results.
 //
-// Run:  npm run eval -- --pipeline b [--file data/sample_400.jsonl] [--limit 10] [--threshold 0.5] [--concurrency 8]
+// Run:  npm run eval -- --pipeline b [--file data/sample_400.jsonl] [--limit 10] [--threshold 0.6] [--concurrency 8]
 //                                     [--explain-batch 10] [--explain-concurrency 4] [--no-explain]
 //       npm run eval -- --pipeline a [--file ...] [--limit 40] [--batch 40] [--concurrency 4]
 //
@@ -26,7 +26,7 @@ const flag = (name: string, fallback: string) => {
 const pipeline = flag("pipeline", "b").toUpperCase();
 const file = flag("file", "data/sample_400.jsonl");
 const limit = Number(flag("limit", "0"));
-const threshold = Number(flag("threshold", "0.5"));
+const threshold = Number(flag("threshold", "0.6"));
 const concurrency = Number(flag("concurrency", pipeline === "A" ? "4" : "8"));
 const batchSize = Number(flag("batch", "40"));
 const explain = pipeline === "B" && !args.includes("--no-explain"); // pipeline B step 3
@@ -141,6 +141,8 @@ const csv = [
 writeFileSync(`${dir}/metrics.csv`, csv.join("\n") + "\n");
 
 const f = (x: number) => x.toFixed(2);
+// False-alarm rate: share of fair sentences that got flagged (FP / (FP + TN)).
+const far = (s: Scores) => (s.fp + s.tn ? s.fp / (s.fp + s.tn) : 0);
 const row = (name: string, s: Scores) => `| ${name} | ${s.support} | ${s.tp} | ${s.fp} | ${s.fn} | ${f(s.precision)} | ${f(s.recall)} | ${f(s.f1)} | ${f(s.f2)} |`;
 const summary = `# Pipeline ${pipeline} — ${file}${limit ? ` (first ${limit})` : ""}
 
@@ -165,15 +167,17 @@ ${CATEGORIES.map((c) => row(c, cats[c]!)).join("\n")}
 
 Macro-F1: ${f(macroF1(cats))} · Exact label-set match: ${f(exactMatch(scored) * 100)}%
 
+False-alarm rate (fair sentences flagged): ${sent.fp} of ${sent.fp + sent.tn} = **${f(far(sent) * 100)}%**. Unlike precision, this does not depend on how many unfair sentences the sample has.
+
 ${stageTable}
 ${vetoAnalysis}
 ${
   hasProbs
     ? `## Threshold sweep
 
-| threshold | micro P | micro R | micro F1 | sentence P | sentence R | sentence F1 | sentence F2 |
-|---|---|---|---|---|---|---|---|
-${sweep.map((s) => `| ${s.t} | ${f(s.micro.precision)} | ${f(s.micro.recall)} | ${f(s.micro.f1)} | ${f(s.sentence.precision)} | ${f(s.sentence.recall)} | ${f(s.sentence.f1)} | ${f(s.sentence.f2)} |`).join("\n")}
+| threshold | micro P | micro R | micro F1 | sentence P | sentence R | sentence F1 | sentence F2 | false-alarm rate |
+|---|---|---|---|---|---|---|---|---|
+${sweep.map((s) => `| ${s.t} | ${f(s.micro.precision)} | ${f(s.micro.recall)} | ${f(s.micro.f1)} | ${f(s.sentence.precision)} | ${f(s.sentence.recall)} | ${f(s.sentence.f1)} | ${f(s.sentence.f2)} | ${f(far(s.sentence) * 100)}% |`).join("\n")}
 `
     : "No threshold sweep: the LLM returns labels, not probabilities.\n"
 }`;

@@ -41,6 +41,14 @@
         "true": "The provider has the power to suspend, terminate, close, or revoke the user's account, access, license, or the service, including as a response to a breach, violation, or inactivity.",
         "false": "Only the user can end the agreement, or the clause is about something else."
       }
+    },
+    "v3": {
+      "type": "noul",
+      "instructions": "Does `clause` give the provider the right to suspend, terminate, revoke, or cut off the user's account, access, license, purchases, or the service, or say the user's rights end automatically?",
+      "criteria": {
+        "true": "The provider may suspend, terminate, close, revoke, deny, or end the user's account, access, license, purchases, or the service, whether for any reason or for reasons such as breach, violation, fraud, or inactivity; or a violation automatically ends the user's rights.",
+        "false": "The clause only describes what happens after termination, only calls a licence revocable while granting it, describes a temporary suspension for maintenance or repairs, limits the provider's liability, is a section heading, or is about something else."
+      }
     }
   },
   "content_removal": {
@@ -76,6 +84,58 @@
       "criteria": {
         "true": "The clause says disputes or claims must or will go to binding arbitration, or that the user waives court or jury trial in favour of arbitration.",
         "false": "The clause gives procedural details of an arbitration, or is about something else."
+      }
+    }
+  },
+  "limitation_of_liability": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` itself exclude or cap the provider's own liability to the user for damages or losses?",
+      "criteria": {
+        "true": "It says the provider will not be liable for damages, losses, or harm the user suffers, excludes types of damages (indirect, consequential, lost profits, data loss), or caps what the provider pays, e.g. \"in no event will we be liable for...\" or \"our total liability shall not exceed...\".",
+        "false": "It only disclaims warranties or guarantees about quality, accuracy, or availability; says the user or a third party is responsible; makes the user indemnify or release the provider; is a section heading; or is about something else."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Does `clause` itself say the provider will not pay, or will pay only limited amounts, for damages or losses the user suffers?",
+      "criteria": {
+        "true": "It excludes or caps the provider's liability for damages: no liability for any or certain damages (indirect, consequential, lost profits, data loss, service interruptions), or a maximum amount the provider will pay.",
+        "false": "It does not exclude or cap the provider's liability for damages, or is about something else."
+      }
+    },
+    "v3": {
+      "type": "noul",
+      "instructions": "Does `clause` say the provider is not liable, owes the user limited or no compensation, or caps what it will pay?",
+      "criteria": {
+        "true": "It excludes or caps the provider's liability: not liable or responsible for damages, losses, or claims (including ones caused by third-party services, other users, user content, or service interruptions); excludes kinds of damages; caps the amount; or says the user gets no refund or compensation.",
+        "false": "It only disclaims warranties about quality or accuracy without excluding liability, says the user is responsible for their own conduct, is a section heading, or is about something else."
+      }
+    },
+    "v4": {
+      "type": "noul",
+      "instructions": "Does `clause` exclude or limit the provider's liability for damages, losses, or harm to the user?",
+      "criteria": {
+        "true": "The clause says the provider is not liable, caps or restricts the damages it will pay, or says the user gets no refund or compensation.",
+        "false": "The clause only disclaims warranties about quality or accuracy, only says the user or a third party is responsible, makes the user indemnify the provider, is a section heading, or is about something else."
+      }
+    }
+  },
+  "contract_by_using": {
+    "v1": {
+      "type": "noul",
+      "instructions": "Does `clause` say that using, accessing, or visiting the service by itself means the user accepts these terms?",
+      "criteria": {
+        "true": "Using, accessing, visiting, or continuing to use the service counts as accepting or being bound by the terms or agreement, e.g. \"by using the service you agree to these terms\".",
+        "false": "Using the service only means agreeing to something narrower than the terms (a privacy policy, updates, a statement); it only says the terms apply or tells users who disagree not to use the service; acceptance requires an explicit action; or it is about something else."
+      }
+    },
+    "v2": {
+      "type": "noul",
+      "instructions": "Does `clause` say that using, accessing, or visiting the service by itself means the user accepts these terms?",
+      "criteria": {
+        "true": "Using, accessing, visiting, or continuing to use the service counts as accepting or being bound by the terms or agreement, e.g. \"by using the service you agree to these terms\".",
+        "false": "Acceptance requires an explicit action like signing up or clicking agree, or the clause is about something else."
       }
     }
   }

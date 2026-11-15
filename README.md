@@ -20,8 +20,9 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 4 | Pipeline B (Jev) on the held-out test sample (rubric v1.1: sentence recall 0.97, precision 0.86) | ✅ |
 | 5 | Pipeline A (LLM only) on the same sample (sentence F1 0.92 vs Jev 0.91, at ~12× the cost) | ✅ |
 | 6 | Pipeline B step 3: the LLM explains only Jev-flagged sentences. On the full test split (11% unfair) B costs ~40% less than A ($0.030 vs $0.050 per 100); precision drops to ~0.5 for both | ✅ |
+| 6.5 | Rubric v1.2 + default threshold 0.6, tuned for precision on the full validation split. Full test: A and B now tie (sentence F1 0.72, P 0.58, recall 0.93–0.94, false-alarm rate 8%); B costs 49% less ($0.026 vs $0.051 per 100) | ✅ |
 | 7 | 3 consistency runs per pipeline (how many sentences change labels), latency at the same concurrency for both, manual 1–5 scores for a sample of explanations (`explanations_sample.csv`), final summary table | ⏳ next |
-| Later | Optional: rubric v1.2 (exclude pure warranty disclaimers from `limitation_of_liability`, tuned on validation), contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
+| Later | Optional: contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
 
 ## The two pipelines
 
@@ -62,7 +63,7 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 | `npm run inspect-data [-- <regex>] [--split validation]` | Show class balance, or search sentences and show their expert labels |
 | `npm run rubric-check -- <category> [regex] [--file …]` | Compare a question with its candidate rewordings (`src/rubric.candidates.json`) |
 | `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
-| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5] [--explain-batch 10] [--no-explain]` | Run pipeline B (Jev, then LLM explanations for flagged sentences) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
+| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.6] [--explain-batch 10] [--no-explain]` | Run pipeline B (Jev, then LLM explanations for flagged sentences) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
 | `npm run eval -- --pipeline a [--file …] [--limit N] [--batch 40]` | Run pipeline A (LLM only) on batches of consecutive sentences and score it the same way |
 | `npm run test-metrics` | Check the metrics code against a hand-built example |
 | `npm run typecheck` | Run the TypeScript type check |
@@ -105,11 +106,11 @@ We ask 8 **noul** (yes/no) questions, one per UNFAIR-ToS category, all in **one 
 
 | id | What `instructions` asks about `clause` |
 |---|---|
-| `limitation_of_liability` | Does it exclude or limit the provider's liability for damages, losses or harm? |
+| `limitation_of_liability` | Does it exclude or limit the provider's liability for damages, losses or harm, or deny refunds or compensation? (Pure warranty disclaimers and the user's own responsibility don't count.) |
 | `unilateral_termination` | Can the provider suspend, terminate or revoke the account, access, licence or service, including for breach, or does a violation end the user's rights automatically? |
 | `unilateral_change` | Can the provider alter the terms, prices, fees, features, data or usage limits by its own decision, even with notice? |
 | `content_removal` | Can the provider remove, delete, block or take away the user's content or account items (usernames, data, virtual or purchased items), or does the user lose them? |
-| `contract_by_using` | Is the user bound simply by using or accessing the service? |
+| `contract_by_using` | Does using or accessing the service by itself mean accepting *these terms*? (Agreeing to something narrower, like a privacy policy, doesn't count.) |
 | `choice_of_law` | Does it state which country's or state's law governs the agreement? |
 | `jurisdiction` | Does it state which courts or which place disputes must be brought in? |
 | `arbitration` | Does the clause *itself* require disputes to be resolved by arbitration instead of in court? (Procedural details of an arbitration don't count.) |
@@ -163,7 +164,7 @@ Jev answers quickly and literally, without reasoning about what you meant. In pr
 }
 ```
 
-- **`noul` is the probability of yes.** The pipeline turns it into a label with a threshold (default 0.5) and keeps the raw probabilities so the threshold can be changed later without new calls. A value of 0.5 means equal odds, not "half true".
+- **`noul` is the probability of yes.** The pipeline turns it into a label with a threshold (default 0.6, chosen on validation as the highest that keeps sentence recall ≥ 0.95) and keeps the raw probabilities so the threshold can be changed later without new calls. A value of 0.5 means equal odds, not "half true".
 - **`usage.cost`** is added by OpenRouter, in USD. Output tokens are free, so the cost covers input only. All 8 questions on one sentence cost about **$0.00004**, roughly $0.04 per 1,000 sentences.
 
 ### Other question types (not used in the rubric)

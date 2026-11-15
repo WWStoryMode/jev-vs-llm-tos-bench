@@ -1,11 +1,11 @@
 {
-  "_note": "v1.1. One noul question per UNFAIR-ToS category, shared verbatim by both pipelines. unilateral_change = v3 (tuned on test sample); unilateral_termination v1, content_removal v1 (tuned on validation); arbitration v1 (tuned on validation+train arbitration sentences, AFTER seeing v1 test errors); other 4 v0. Keys are our ids; dataset index mapping comes from data/label_names.json.",
+  "_note": "v1.2. One noul question per UNFAIR-ToS category, shared verbatim by both pipelines. unilateral_change = v3 (tuned on test sample); unilateral_termination v3, content_removal v1, limitation_of_liability v4, contract_by_using v1 (tuned on validation; v1.2 changes tuned on the FULL validation split for precision, after seeing test false alarms on the 1,607 split); arbitration v1 (tuned on validation+train arbitration sentences, AFTER seeing v1 test errors); choice_of_law, jurisdiction v0. Default threshold 0.6 (highest with validation sentence recall >= 0.95). Keys are our ids; dataset index mapping comes from data/label_names.json.",
   "limitation_of_liability": {
     "type": "noul",
     "instructions": "Does `clause` exclude or limit the provider's liability for damages, losses, or harm to the user?",
     "criteria": {
-      "true": "The clause says the provider is not liable, or caps or restricts the damages it will pay.",
-      "false": "The clause does not limit the provider's liability, or is about something else."
+      "true": "The clause says the provider is not liable, caps or restricts the damages it will pay, or says the user gets no refund or compensation.",
+      "false": "The clause only disclaims warranties about quality or accuracy, only says the user or a third party is responsible, makes the user indemnify the provider, is a section heading, or is about something else."
     }
   },
   "unilateral_termination": {
@@ -13,7 +13,7 @@
     "instructions": "Does `clause` give the provider the right to suspend, terminate, revoke, or cut off the user's account, access, license, purchases, or the service, or say the user's rights end automatically?",
     "criteria": {
       "true": "The provider may suspend, terminate, close, revoke, deny, or end the user's account, access, license, purchases, or the service, whether for any reason or for reasons such as breach, violation, fraud, or inactivity; or a violation automatically ends the user's rights.",
-      "false": "The clause only describes what happens after termination, limits the provider's liability, is a section heading, or is about something else."
+      "false": "The clause only describes what happens after termination, only calls a licence revocable while granting it, describes a temporary suspension for maintenance or repairs, limits the provider's liability, is a section heading, or is about something else."
     }
   },
   "unilateral_change": {
@@ -34,10 +34,10 @@
   },
   "contract_by_using": {
     "type": "noul",
-    "instructions": "Does `clause` say the user is bound by the terms simply by using or accessing the service?",
+    "instructions": "Does `clause` say that using, accessing, or visiting the service by itself means the user accepts these terms?",
     "criteria": {
-      "true": "Using, accessing, or visiting the service counts as accepting the terms.",
-      "false": "Acceptance requires an explicit action like signing up or clicking agree, or the clause is about something else."
+      "true": "Using, accessing, visiting, or continuing to use the service counts as accepting or being bound by the terms or agreement, e.g. \"by using the service you agree to these terms\".",
+      "false": "Using the service only means agreeing to something narrower than the terms (a privacy policy, updates, a statement); it only says the terms apply or tells users who disagree not to use the service; acceptance requires an explicit action; or it is about something else."
     }
   },
   "choice_of_law": {
