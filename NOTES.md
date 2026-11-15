@@ -217,8 +217,59 @@ Of the 228 fair sentences, both flagged the same 17, the LLM alone flagged 4 and
 ### Prompt comparison
 Both prompts come from the same `rubric.json`. The README's "Jev prompt vs LLM prompt" section shows them side by side. The difference most relevant to the results: Jev sees one sentence on its own, while the LLM sees 40 neighbours. That accounts for both A-only catches (test-0566, test-0759). Jev also returns probabilities where the LLM returns yes or no, so only B can trade precision for recall with a threshold.
 
+## Pipeline B with explanations, and the full test split (step 6)
+
+Pipeline B now has its third stage. Jev labels every sentence. Then the LLM (Sonnet 5.5) gets only the sentences Jev flagged, together with Jev's categories. It writes a one-sentence explanation and says whether it agrees (`agree`). Jev's labels are never changed; `agree` is recorded for analysis only. The rubric is v1.1, the threshold 0.5, and explanations go in batches of 10 with 4 calls at a time.
+
+Results folders:
+- `2026-11-15T12-40-55_B_...`: B on the 400-sentence test sample
+- `2026-11-15T12-42-59_B_...`: B on the full test split
+- `2026-11-15T12-47-30_A_...`: A on the full test split
+
+### Head to head (both pipelines produce labels and explanations)
+
+| | A, 400 sample | B, 400 sample | A, full test (1,607) | B, full test (1,607) |
+|---|---|---|---|---|
+| Unfair share | 43% | 43% | 11% | 11% |
+| Sentences explained by the LLM | all (in batches) | 194 | all (in batches) | 356 |
+| **Cost per 100** | $0.059 | $0.062 | **$0.050** | **$0.030** |
+| Time per 100 | 6.2 s | 11.2 s | 4.2 s | 7.1 s |
+| Sentence P / R | 0.89 / 0.95 | 0.86 / 0.97 | **0.50 / 0.95** | **0.46 / 0.96** |
+| Sentence F1 / F2 | 0.92 / 0.94 | 0.91 / 0.94 | 0.66 / 0.81 | 0.63 / 0.79 |
+| Micro F1 · macro F1 | 0.86 · 0.87 | 0.85 · 0.85 | 0.63 · 0.70 | 0.60 · 0.62 |
+| Failures / malformed | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+Cost breakdown for B:
+
+| | 400 sample | full test |
+|---|---|---|
+| Jev stage | $0.020 | $0.080 |
+| LLM explanation stage | $0.229 | $0.409 |
+
+### What we learned
+1. **Explanations, not classification, are where the money goes.** Jev's 12× cost advantage covered labelling only. Once B also explains what it flags, the explanation stage is 84–92% of B's cost.
+   - On a sample that is 43% unfair, B costs about the same as A.
+   - On the full test split (11% unfair), B costs **about 40% less** ($0.030 vs $0.050 per 100). Fewer sentences need explaining, while A still has to read every sentence.
+   - B's saving grows as the share of unfair sentences shrinks.
+2. **The 400-sample precision was mostly a result of its mix.** Both pipelines raise false alarms on about 11–13% of fair sentences. With 228 fair sentences that's a few dozen; with 1,435 fair sentences it outnumbers the real catches. Precision falls to about 0.5 for **both** pipelines, so this isn't a Jev weakness.
+3. **Most false alarms are shared, and come from our rubric.** On the full split, 111 fair sentences were flagged by both pipelines, 52 by A only and 80 by B only.
+   - Of the shared ones, 59 are `limitation_of_liability`, mostly warranty disclaimers ("makes no warranty regarding the quality…"). Our rubric counts these, but the UNFAIR-ToS annotators did not.
+   - Others look arguably unfair but unlabelled, such as test-0187 ("you will arbitrate any dispute…").
+   - **Next fix:** tighten `limitation_of_liability` on the validation split to exclude pure warranty disclaimers.
+4. **Jev's threshold helps here.** On the full split, raising the threshold from 0.5 to 0.7 or 0.8 gives sentence precision of 0.57 or 0.66 with recall of 0.94 or 0.91. A has no threshold to adjust. This supports the UI plan to let users choose sensitivity.
+5. **The LLM as a veto isn't worth it.**
+   - Full split: the LLM disagreed with 55 false alarms and 2 real catches. Precision rose from 0.46 to 0.55 and recall fell from 0.96 to 0.95, but it still agreed with 136 false alarms.
+   - 400 sample: the veto removed 6 real catches.
+   - Raising Jev's threshold is cheaper and more effective.
+6. **Latency:** B is slower because its two stages run one after the other: 65 s for Jev at concurrency 8, then 48 s for explanations. Explanations in batches of 10 cut that stage from 13.2 s to 5.7 s on 60 sentences, but cost 28% more because the system prompt is resent with each call. Step 7 will compare the pipelines at the same concurrency.
+7. **The model's agree answer varies between runs even at temperature 0** (4 vs 6 vetoes on two identical validation runs). The step 7 consistency runs should measure this.
+
+### Engineering
+- `llm.ts`: A's labelling and B's explanation step now share one call → zod check → id check → retry routine (`callBatch`). B's step is `llmExplainBatch()`, with the prompt `EXPLAIN_PROMPT`, which is built from the same rubric.
+- `runB()` records each stage separately (`stages`: jev and llm-explain). It saves `explanation`, `llmAgrees` and `explainError` per sentence. If explaining fails, Jev's labels for that sentence still count.
+- `eval.ts`: explanations are on by default for B, and `--no-explain` turns them off. Flags `--explain-batch 10` and `--explain-concurrency 4`. The summary adds a stage table and the veto table.
+
 ## Remaining steps
-- **Step 6:** the LLM explains only the sentences Jev flagged, and is told which categories Jev flagged. Add that cost and time to B, then compare again with A, where both pipelines output labels plus explanations.
 - **Step 7:** 3 consistency runs per pipeline; latency at the same concurrency for both; manual 1–5 scores for a sample of explanations; final summary.
 - **Later (optional):** contamination check on recent T&Cs, Jev 1.14, `{clause, context}` state, UI.
 

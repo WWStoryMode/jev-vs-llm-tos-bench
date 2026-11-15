@@ -19,9 +19,9 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 3 | Tune `rubric.json` on validation (v1: sentence-level recall 0.97) | ✅ |
 | 4 | Pipeline B (Jev) on the held-out test sample (rubric v1.1: sentence recall 0.97, precision 0.86) | ✅ |
 | 5 | Pipeline A (LLM only) on the same sample (sentence F1 0.92 vs Jev 0.91, at ~12× the cost) | ✅ |
-| 6 | Pipeline B step 3: the LLM explains only the sentences Jev flagged (about 46%), and is told which categories Jev flagged. That cost and time are added to B's totals, so both pipelines produce labels plus explanations | ⏳ next |
-| 7 | 3 consistency runs per pipeline (how many sentences change labels), latency at the same concurrency for both, manual 1–5 scores for a sample of explanations (`explanations_sample.csv`), final summary table | — |
-| Later | Optional: contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
+| 6 | Pipeline B step 3: the LLM explains only Jev-flagged sentences. On the full test split (11% unfair) B costs ~40% less than A ($0.030 vs $0.050 per 100); precision drops to ~0.5 for both | ✅ |
+| 7 | 3 consistency runs per pipeline (how many sentences change labels), latency at the same concurrency for both, manual 1–5 scores for a sample of explanations (`explanations_sample.csv`), final summary table | ⏳ next |
+| Later | Optional: rubric v1.2 (exclude pure warranty disclaimers from `limitation_of_liability`, tuned on validation), contamination check on recent T&Cs, Jev 1.14 comparison, `{clause, context}` state experiment, UI (Vite + React, threshold slider + probabilities) | — |
 
 ## The two pipelines
 
@@ -62,7 +62,7 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 | `npm run inspect-data [-- <regex>] [--split validation]` | Show class balance, or search sentences and show their expert labels |
 | `npm run rubric-check -- <category> [regex] [--file …]` | Compare a question with its candidate rewordings (`src/rubric.candidates.json`) |
 | `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
-| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5]` | Run pipeline B (Jev) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
+| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5] [--explain-batch 10] [--no-explain]` | Run pipeline B (Jev, then LLM explanations for flagged sentences) and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
 | `npm run eval -- --pipeline a [--file …] [--limit N] [--batch 40]` | Run pipeline A (LLM only) on batches of consecutive sentences and score it the same way |
 | `npm run test-metrics` | Check the metrics code against a hand-built example |
 | `npm run typecheck` | Run the TypeScript type check |

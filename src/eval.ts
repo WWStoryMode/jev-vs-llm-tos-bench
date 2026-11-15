@@ -1,6 +1,7 @@
 // Evaluation entry point: run a pipeline on a sample, score against expert labels, write results.
 //
 // Run:  npm run eval -- --pipeline b [--file data/sample_400.jsonl] [--limit 10] [--threshold 0.5] [--concurrency 8]
+//                                     [--explain-batch 10] [--explain-concurrency 4] [--no-explain]
 //       npm run eval -- --pipeline a [--file ...] [--limit 40] [--batch 40] [--concurrency 4]
 //
 // Writes results/<timestamp>_<pipeline>_<model>/:
@@ -28,6 +29,10 @@ const limit = Number(flag("limit", "0"));
 const threshold = Number(flag("threshold", "0.5"));
 const concurrency = Number(flag("concurrency", pipeline === "A" ? "4" : "8"));
 const batchSize = Number(flag("batch", "40"));
+const explain = pipeline === "B" && !args.includes("--no-explain"); // pipeline B step 3
+const explainConcurrency = Number(flag("explain-concurrency", "4"));
+// Explanations are output-heavy, so small batches in parallel finish faster than one big batch.
+const explainBatch = Number(flag("explain-batch", "10"));
 const SWEEP = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
 
 if (pipeline !== "A" && pipeline !== "B") {
@@ -38,15 +43,26 @@ if (pipeline !== "A" && pipeline !== "B") {
 let sentences = loadSentences(file);
 if (limit > 0) sentences = sentences.slice(0, limit);
 const model = pipeline === "A" ? config.llmModel : config.jevModel;
-const setting = pipeline === "A" ? `batch ${batchSize}` : `threshold ${threshold}`;
+const models = pipeline === "B" && explain ? `${config.jevModel} + ${config.llmModel} (explanations)` : model;
+const setting = pipeline === "A" ? `batch ${batchSize}` : `threshold ${threshold}${explain ? `, explain batch ${explainBatch}` : ", no explanations"}`;
 console.log(`pipeline ${pipeline} | ${sentences.length} sentences from ${file} | ${model} | rubric ${RUBRIC_VERSION} | ${setting}`);
 
 // ---------- run ----------
-const onProgress = (n: number) => process.stdout.write(`\r  ${n}/${sentences.length}`);
+let lastStage = "";
+const onProgress = (n: number, stage = "") => {
+  if (lastStage && stage !== lastStage) process.stdout.write("\n");
+  lastStage = stage;
+  process.stdout.write(`\r  ${stage ? `${stage} ` : ""}${n}${stage === "explain" ? " flagged" : `/${sentences.length}`}`);
+};
 const run: PipelineRun =
   pipeline === "A"
     ? await runA(sentences, { batchSize, concurrency, onProgress })
-    : await runB(sentences, { threshold, concurrency, onProgress });
+    : await runB(sentences, {
+        threshold,
+        concurrency,
+        explain: explain ? { batchSize: explainBatch, concurrency: explainConcurrency } : undefined,
+        onProgress,
+      });
 console.log();
 
 // ---------- score ----------
@@ -72,6 +88,41 @@ const n = sentences.length;
 const per100Cost = (run.cost / n) * 100;
 const per100Sec = (run.wallMs / 1000 / n) * 100;
 
+// ---------- pipeline B step 3: stages + explanation stats ----------
+const stageTable = run.stages
+  ? `## Stages
+
+| stage | items | calls | failures | cost | wall-clock |
+|---|---|---|---|---|---|
+${run.stages.map((st) => `| ${st.name} | ${st.items} | ${st.calls} | ${st.failures} | $${st.cost.toFixed(6)} | ${(st.wallMs / 1000).toFixed(1)} s |`).join("\n")}
+| **total** | | ${run.calls} | | **$${run.cost.toFixed(6)}** | **${(run.wallMs / 1000).toFixed(1)} s** |
+`
+  : "";
+
+// The LLM's agree/disagree is recorded only; labels stay Jev's. This shows what an LLM veto WOULD do.
+const explained = run.results.filter((r) => r.llmAgrees !== undefined);
+const vetoAnalysis = (() => {
+  if (!explained.length) return "";
+  const count = (agrees: boolean, unfair: boolean) =>
+    explained.filter((r) => r.llmAgrees === agrees && r.expert.length > 0 === unfair).length;
+  const vetoed = new Set(explained.filter((r) => !r.llmAgrees).map((r) => r.id));
+  const v = sentenceLevel(scored.map((r) => (vetoed.has(r.id) ? { ...r, predicted: [] } : r)));
+  const pr = (s: Scores) => `P ${s.precision.toFixed(2)}, R ${s.recall.toFixed(2)}, F1 ${s.f1.toFixed(2)}, F2 ${s.f2.toFixed(2)}`;
+  return `## Explanations (step 3)
+
+${explained.length} of ${run.stages?.[1]?.items ?? 0} flagged sentences explained.
+
+The LLM was also asked whether it agrees a flagged category applies. Labels were **not** changed; this shows what an LLM veto would do:
+
+| | expert: unfair | expert: fair |
+|---|---|---|
+| LLM agrees | ${count(true, true)} | ${count(true, false)} |
+| LLM disagrees (would veto) | ${count(false, true)} | ${count(false, false)} |
+
+Sentence level with the veto: ${pr(v)} (without: ${pr(sent)}).
+`;
+})();
+
 // ---------- write ----------
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const dir = `results/${stamp}_${pipeline}_${model.replace(/\W+/g, "-")}${limit ? `_limit${limit}` : ""}`;
@@ -96,11 +147,11 @@ const summary = `# Pipeline ${pipeline} — ${file}${limit ? ` (first ${limit})`
 | | |
 |---|---|
 | Date | ${new Date().toISOString()} |
-| Model | ${model} |
+| Model | ${models} |
 | Rubric | ${RUBRIC_VERSION} |
 | Sentences | ${n} (${sentences.filter((s) => s.categories.length).length} unfair) |
-| ${pipeline === "A" ? "Batch size" : "Threshold"} | ${pipeline === "A" ? `${batchSize} consecutive sentences per call` : threshold} |
-| Wall-clock | ${(run.wallMs / 1000).toFixed(1)} s (concurrency ${concurrency}) → **${per100Sec.toFixed(1)} s per 100 sentences** |
+| ${pipeline === "A" ? "Batch size" : "Threshold"} | ${pipeline === "A" ? `${batchSize} consecutive sentences per call` : `${threshold}${explain ? ` · explanations: ${explainBatch} flagged sentences per call` : " · no explanations"}`} |
+| Wall-clock | ${(run.wallMs / 1000).toFixed(1)} s (concurrency ${concurrency}${explain ? `, explain ${explainConcurrency}` : ""}) → **${per100Sec.toFixed(1)} s per 100 sentences** |
 | Cost | $${run.cost.toFixed(6)} → **$${per100Cost.toFixed(5)} per 100**, $${(per100Cost * 10).toFixed(4)} per 1k, $${(per100Cost * 1000).toFixed(2)} per 100k |
 | Reliability | ${run.failures} of ${n} sentences without a usable answer (${f((run.failures / n) * 100)}%) · ${run.calls} API calls · ${retryCount} HTTP retries${run.malformed !== undefined ? ` · ${run.malformed} malformed replies` : ""} |
 
@@ -114,6 +165,8 @@ ${CATEGORIES.map((c) => row(c, cats[c]!)).join("\n")}
 
 Macro-F1: ${f(macroF1(cats))} · Exact label-set match: ${f(exactMatch(scored) * 100)}%
 
+${stageTable}
+${vetoAnalysis}
 ${
   hasProbs
     ? `## Threshold sweep
@@ -129,3 +182,5 @@ writeFileSync(`${dir}/summary.md`, summary);
 console.log(summary);
 console.log(`saved ${dir}/`);
 if (run.failures) console.log(`first error: ${run.results.find((r) => r.failed)?.error}`);
+const explainErr = run.results.find((r) => r.explainError);
+if (explainErr) console.log(`first explanation error: ${explainErr.explainError}`);
