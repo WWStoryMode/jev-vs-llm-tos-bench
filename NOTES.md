@@ -96,8 +96,70 @@ Separately, the Airbnb list (validation-0471–0476) is labelled as a block, so 
 - `npm run rubric-eval [-- --file …]` runs all 8 questions per call, the way pipeline B will. It reports per-category, micro and sentence-level metrics, and saves the raw probabilities to `results/rubric-eval/`.
 - `npm run export-data -- validation` and `npm run make-sample -- 530 42 validation` create the validation data: `data/unfair_tos_validation.jsonl` (2,275 sentences, 230 unfair) and `data/val_sample_530.jsonl` (230 unfair + 300 fair).
 
-## Open questions → check in step 4
-- Final score: run the frozen v1 rubric **once** on the held-out test sample (`data/sample_400.jsonl`). Report that `unilateral_change` was tuned on it.
+## Pipeline B: test results (step 4)
+
+Pipeline B, steps 1–2 (Jev only: all 8 questions in one call per sentence, threshold 0.5), on the held-out test sample `data/sample_400.jsonl` (172 unfair + 228 fair). Model `typesafe/jev-1.13`.
+
+### Headline
+
+| | **v1** (clean held-out run) | **v1.1** (+ arbitration fix) | validation, v1 (for reference) |
+|---|---|---|---|
+| **Sentence-level recall** (unfair sentence flagged by any question) | 0.96 (7 missed) | **0.97** (6 missed) | 0.97 |
+| Sentence-level precision | 0.81 (38 of 228 fair flagged) | **0.86** (26 flagged) | 0.81 |
+| Sentence-level F1 / F2 | 0.88 / 0.93 | **0.91 / 0.94** | 0.88 / 0.93 |
+| Micro F1 | 0.82 | **0.85** | 0.80 |
+| Macro F1 | 0.80 | **0.85** | — |
+| Exact label-set match | 81.5% | **84.75%** | — |
+| Cost | $0.0047 per 100 sentences ($4.72 per 100k) | $0.0050 per 100 | $0.0047 per 100 |
+| Latency | 3.5 s per 100 sentences (8 parallel calls) | 3.5 s per 100 | 3.3 s per 100 |
+| Reliability | 0 failures, 0 retries / 400 | 0 / 400 | 0 / 530 |
+
+Result folders:
+- `results/2026-11-15T11-01-55_B_typesafe-jev-1-13/` (test, v1)
+- `results/2026-11-15T11-07-59_B_typesafe-jev-1-13/` (test, v1.1)
+- `results/2026-11-15T10-58-36_B_typesafe-jev-1-13/` (validation, v1)
+
+**The rubric generalises.** v1 scored almost the same on the untouched test sample as on validation, so tuning on validation didn't overfit.
+
+### Per category on test (v1.1)
+
+| category | precision | recall | F1 | note |
+|---|---|---|---|---|
+| jurisdiction | 1.00 | 0.94 | 0.97 | |
+| unilateral_termination | 0.88 | 0.92 | 0.90 | |
+| contract_by_using | 0.82 | 1.00 | 0.90 | |
+| choice_of_law | 0.81 | 1.00 | 0.90 | |
+| limitation_of_liability | 0.79 | 0.97 | 0.87 | |
+| arbitration | 0.75 | 0.86 | 0.80 | was 0.30 / 0.86 / 0.44 in v1 |
+| unilateral_change | 0.65 | 0.87 | 0.74 | ⚠️ tuned on this sample; 0.63 F1 on validation |
+| content_removal | 0.52 | 1.00 | 0.68 | |
+
+### Arbitration fix (v1 → v1.1)
+- **Problem:** in the v1 test run, arbitration precision was 0.30 (14 false alarms). Almost all were *procedural* sentences inside an arbitration section: who the arbitrator is, claims under $10,000, "the Federal Arbitration Act governs…". The experts flag only the sentence that *imposes* arbitration. This is the same power-vs-procedure pattern as change vs notice. The validation sample has only 9 arbitration positives, so it hadn't shown the problem.
+- **Fix:** the new question asks whether the clause *itself* requires arbitration instead of court, and describes procedural details as `false`. It was tuned on `data/arb_tune.jsonl`: every sentence mentioning "arbitra" in the validation and train splits (429 sentences, 36 positives), with no test sentences.
+  - Tuning set: false alarms fell from 194 to 43, recall went from 1.00 to 0.92.
+  - Validation sample: F1 rose from 0.82 to 0.95, recall stayed at 9/9.
+  - Test sample: false alarms fell from 14 to 2.
+- **Precision ceiling:** most remaining false alarms in the tuning set are sentences that genuinely impose arbitration, or headings and "please read carefully" warnings, that the experts left unlabelled. They appear to label one main sentence per arbitration section. A model that sees one sentence at a time can't tell which one that is. For a user, these are correct warnings.
+- ⚠️ **Caveat:** the arbitration wording was written *after seeing* the v1 test errors, so the v1.1 test score for arbitration is somewhat optimistic. **v1 is the clean held-out score.** Pipeline A will use the v1.1 wording, so the A-vs-B comparison stays like for like.
+
+### Sentence-level misses on test (v1.1)
+- **Need context:** test-0566 "consent to the exclusive jurisdiction of **those courts**", test-0542 "we may take **any of these actions**", test-0759 "limit how you connect" (0.41, borderline).
+- **Likely label noise:** test-0653 (seen before), and test-0940 "**you** may terminate your Duolingo account", which is labelled termination although the *user* is the one terminating.
+- **Genuine miss:** test-1334, a liability clause ("regardless of any statute… any claim…", 0.18).
+
+### Engineering
+- `src/` now holds the reusable pipeline code:
+  - `data.ts`, `pool.ts`, `rubric.ts`: loading, the concurrency limit, the rubric and its version
+  - `jev.ts`: `jevClassify`, `flagged`
+  - `metrics.ts`: per-category, micro, macro, sentence-level and exact-match scores. A failed call counts as "nothing flagged".
+  - `pipelines.ts`: `runB` returns a shared result format that pipeline A will reuse
+  - `eval.ts`: the CLI, which writes `raw.jsonl`, `metrics.csv` and `summary.md`
+- `openrouter.ts` retries 408, 429 and 5xx responses and network errors with exponential backoff and jitter, and counts retries.
+- `scripts/test-metrics.ts` checks the metrics against a hand-built example with known answers.
+- First sign of run-to-run variation: re-running validation moved one sentence across 0.5 (52 → 53 sentence-level false alarms).
+
+## Open questions → check in step 5+
 - Run-to-run variation: `content_removal` gave 0.01 vs 0.02 on identical input. Probably small and harmless, but the consistency metric will show whether sentences near 0.5 flip label between runs.
 - Related-but-different neighbours (e.g. a termination sentence next to a content-removal one) might confuse Jev more than unrelated ones did.
 - Possible experiment: put neighbours in a separate field, `{clause, context}`, with questions about `` `clause` `` only. This could help clauses that depend on definitions elsewhere.

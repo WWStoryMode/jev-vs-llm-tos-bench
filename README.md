@@ -17,8 +17,9 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 | 1 | Jev playground + learning notes | ✅ |
 | 2 | Export UNFAIR-ToS test + validation splits, build samples | ✅ |
 | 3 | Tune `rubric.json` on validation (v1: sentence-level recall 0.97) | ✅ |
-| 4 | Pipeline B (Jev) on the held-out test sample | ⏳ next |
-| 5–7 | Pipeline A (LLM), explanations, comparison | — |
+| 4 | Pipeline B (Jev) on the held-out test sample (rubric v1.1: sentence recall 0.97, precision 0.86) | ✅ |
+| 5 | Pipeline A (LLM only) on the same sample | ⏳ next |
+| 6–7 | Explanations, comparison | — |
 
 ## The two pipelines
 
@@ -59,6 +60,8 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 | `npm run inspect-data [-- <regex>] [--split validation]` | Show class balance, or search sentences and show their expert labels |
 | `npm run rubric-check -- <category> [regex] [--file …]` | Compare a question with its candidate rewordings (`src/rubric.candidates.json`) |
 | `npm run rubric-eval [-- --file …]` | Run all 8 questions per sentence; report per-category and sentence-level metrics |
+| `npm run eval -- --pipeline b [--file …] [--limit N] [--threshold 0.5]` | Run a pipeline and score it. Writes `raw.jsonl`, `metrics.csv` and `summary.md` to `results/<timestamp>_<pipeline>_<model>/` |
+| `npm run test-metrics` | Check the metrics code against a hand-built example |
 | `npm run typecheck` | Run the TypeScript type check |
 
 Playground and rubric-eval runs save raw output to `results/`, which is gitignored. Tune the rubric on `data/val_sample_530.jsonl` (validation). Keep `data/sample_400.jsonl` (test) for the final comparison.
@@ -106,7 +109,7 @@ We ask 8 **noul** (yes/no) questions, one per UNFAIR-ToS category, all in **one 
 | `contract_by_using` | Is the user bound simply by using or accessing the service? |
 | `choice_of_law` | Does it state which country's or state's law governs the agreement? |
 | `jurisdiction` | Does it state which courts or which place disputes must be brought in? |
-| `arbitration` | Does it require or allow disputes to be resolved by arbitration instead of in court? |
+| `arbitration` | Does the clause *itself* require disputes to be resolved by arbitration instead of in court? (Procedural details of an arbitration don't count.) |
 
 The full wording, including the `true` and `false` criteria, is in [`src/rubric.json`](src/rubric.json). That file is the single source of truth: pipeline A builds its LLM prompt from the same text, so both pipelines are judged against identical definitions.
 

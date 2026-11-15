@@ -4,7 +4,7 @@
 //       npm run inspect-data -- notice --split validation
 import { readFileSync } from "node:fs";
 
-export type Sentence = { id: string; idx: number; text: string; labels: number[]; categories: string[] };
+import type { Sentence } from "../src/data.js";
 
 const argv = process.argv.slice(2);
 const splitAt = argv.indexOf("--split");

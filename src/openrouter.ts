@@ -53,23 +53,38 @@ export type Timed<T> = { data: T; ms: number };
 
 // ---------- core POST helper ----------
 
+const RETRYABLE = new Set([408, 429, 500, 502, 503, 524, 529]);
+const MAX_ATTEMPTS = 4;
+
+/** Number of retried requests since start (reported as a reliability metric). */
+export let retryCount = 0;
+
 async function post<T>(path: string, body: unknown): Promise<Timed<T>> {
-  const started = performance.now();
-  const res = await fetch(`${config.baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const ms = performance.now() - started;
-  const text = await res.text();
-  if (!res.ok) {
+  for (let attempt = 1; ; attempt++) {
+    const started = performance.now();
+    let status = 0;
+    let text = "";
+    try {
+      const res = await fetch(`${config.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      status = res.status;
+      text = await res.text();
+      if (res.ok) return { data: JSON.parse(text) as T, ms: performance.now() - started };
+    } catch (err) {
+      text = String(err); // network error: treat as retryable
+    }
     // OpenRouter errors look like {error:{code,message,metadata}}
-    throw new Error(`OpenRouter ${path} ${res.status}: ${text}`);
+    const retryable = status === 0 || RETRYABLE.has(status);
+    if (!retryable || attempt >= MAX_ATTEMPTS) throw new Error(`OpenRouter ${path} ${status}: ${text}`);
+    retryCount++;
+    await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1) + Math.random() * 250)); // backoff + jitter
   }
-  return { data: JSON.parse(text) as T, ms };
 }
 
 // ---------- Jev ----------
