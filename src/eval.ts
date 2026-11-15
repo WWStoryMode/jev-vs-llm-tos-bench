@@ -1,6 +1,7 @@
 // Evaluation entry point: run a pipeline on a sample, score against expert labels, write results.
 //
 // Run:  npm run eval -- --pipeline b [--file data/sample_400.jsonl] [--limit 10] [--threshold 0.5] [--concurrency 8]
+//       npm run eval -- --pipeline a [--file ...] [--limit 40] [--batch 40] [--concurrency 4]
 //
 // Writes results/<timestamp>_<pipeline>_<model>/:
 //   raw.jsonl     one line per sentence: expert labels, prediction, (Jev) probabilities, errors
@@ -12,7 +13,7 @@ import { loadSentences } from "./data.js";
 import { flagged } from "./jev.js";
 import { exactMatch, macroF1, micro, perCategory, type Scored, type Scores, sentenceLevel } from "./metrics.js";
 import { retryCount } from "./openrouter.js";
-import { type PipelineRun, runB } from "./pipelines.js";
+import { type PipelineRun, runA, runB } from "./pipelines.js";
 import { CATEGORIES, RUBRIC_VERSION } from "./rubric.js";
 
 // ---------- args ----------
@@ -25,25 +26,27 @@ const pipeline = flag("pipeline", "b").toUpperCase();
 const file = flag("file", "data/sample_400.jsonl");
 const limit = Number(flag("limit", "0"));
 const threshold = Number(flag("threshold", "0.5"));
-const concurrency = Number(flag("concurrency", "8"));
+const concurrency = Number(flag("concurrency", pipeline === "A" ? "4" : "8"));
+const batchSize = Number(flag("batch", "40"));
 const SWEEP = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
 
-if (pipeline !== "B") {
-  console.error(`Pipeline ${pipeline} not implemented yet (step 5). Use --pipeline b.`);
+if (pipeline !== "A" && pipeline !== "B") {
+  console.error(`Unknown pipeline ${pipeline}. Use --pipeline a or --pipeline b.`);
   process.exit(1);
 }
 
 let sentences = loadSentences(file);
 if (limit > 0) sentences = sentences.slice(0, limit);
-const model = config.jevModel;
-console.log(`pipeline ${pipeline} | ${sentences.length} sentences from ${file} | ${model} | rubric ${RUBRIC_VERSION} | threshold ${threshold}`);
+const model = pipeline === "A" ? config.llmModel : config.jevModel;
+const setting = pipeline === "A" ? `batch ${batchSize}` : `threshold ${threshold}`;
+console.log(`pipeline ${pipeline} | ${sentences.length} sentences from ${file} | ${model} | rubric ${RUBRIC_VERSION} | ${setting}`);
 
 // ---------- run ----------
-const run: PipelineRun = await runB(sentences, {
-  threshold,
-  concurrency,
-  onProgress: (n) => process.stdout.write(`\r  ${n}/${sentences.length}`),
-});
+const onProgress = (n: number) => process.stdout.write(`\r  ${n}/${sentences.length}`);
+const run: PipelineRun =
+  pipeline === "A"
+    ? await runA(sentences, { batchSize, concurrency, onProgress })
+    : await runB(sentences, { threshold, concurrency, onProgress });
 console.log();
 
 // ---------- score ----------
@@ -58,7 +61,9 @@ const scored = asScored(threshold);
 const cats = perCategory(scored, CATEGORIES);
 const mic = micro(cats);
 const sent = sentenceLevel(scored);
-const sweep = SWEEP.map((t) => {
+// Only Jev gives probabilities, so only pipeline B has a threshold sweep. The LLM returns labels only.
+const hasProbs = run.results.some((r) => r.probs);
+const sweep = (hasProbs ? SWEEP : []).map((t) => {
   const s = asScored(t);
   return { t, micro: micro(perCategory(s, CATEGORIES)), sentence: sentenceLevel(s) };
 });
@@ -77,9 +82,9 @@ const csvRow = (scope: string, thr: number, s: Scores) =>
   [scope, thr, s.support, s.tp, s.fp, s.fn, s.tn, s.precision.toFixed(4), s.recall.toFixed(4), s.f1.toFixed(4), s.f2.toFixed(4)].join(",");
 const csv = [
   "scope,threshold,support,tp,fp,fn,tn,precision,recall,f1,f2",
-  ...CATEGORIES.map((c) => csvRow(c, threshold, cats[c]!)),
-  csvRow("micro", threshold, mic),
-  csvRow("sentence", threshold, sent),
+  ...CATEGORIES.map((c) => csvRow(c, hasProbs ? threshold : NaN, cats[c]!)),
+  csvRow("micro", hasProbs ? threshold : NaN, mic),
+  csvRow("sentence", hasProbs ? threshold : NaN, sent),
   ...sweep.flatMap((s) => [csvRow("sweep_micro", s.t, s.micro), csvRow("sweep_sentence", s.t, s.sentence)]),
 ];
 writeFileSync(`${dir}/metrics.csv`, csv.join("\n") + "\n");
@@ -94,12 +99,12 @@ const summary = `# Pipeline ${pipeline} — ${file}${limit ? ` (first ${limit})`
 | Model | ${model} |
 | Rubric | ${RUBRIC_VERSION} |
 | Sentences | ${n} (${sentences.filter((s) => s.categories.length).length} unfair) |
-| Threshold | ${threshold} |
+| ${pipeline === "A" ? "Batch size" : "Threshold"} | ${pipeline === "A" ? `${batchSize} consecutive sentences per call` : threshold} |
 | Wall-clock | ${(run.wallMs / 1000).toFixed(1)} s (concurrency ${concurrency}) → **${per100Sec.toFixed(1)} s per 100 sentences** |
 | Cost | $${run.cost.toFixed(6)} → **$${per100Cost.toFixed(5)} per 100**, $${(per100Cost * 10).toFixed(4)} per 1k, $${(per100Cost * 1000).toFixed(2)} per 100k |
-| Reliability | ${run.failures} failed of ${run.calls} calls (${f((run.failures / run.calls) * 100)}%), ${retryCount} retries |
+| Reliability | ${run.failures} of ${n} sentences without a usable answer (${f((run.failures / n) * 100)}%) · ${run.calls} API calls · ${retryCount} HTTP retries${run.malformed !== undefined ? ` · ${run.malformed} malformed replies` : ""} |
 
-## Accuracy @ ${threshold}
+## Accuracy${hasProbs ? ` @ ${threshold}` : ""}
 
 | scope | support | TP | FP | FN | precision | recall | F1 | F2 |
 |---|---|---|---|---|---|---|---|---|
@@ -109,12 +114,16 @@ ${CATEGORIES.map((c) => row(c, cats[c]!)).join("\n")}
 
 Macro-F1: ${f(macroF1(cats))} · Exact label-set match: ${f(exactMatch(scored) * 100)}%
 
-## Threshold sweep
+${
+  hasProbs
+    ? `## Threshold sweep
 
 | threshold | micro P | micro R | micro F1 | sentence P | sentence R | sentence F1 | sentence F2 |
 |---|---|---|---|---|---|---|---|
 ${sweep.map((s) => `| ${s.t} | ${f(s.micro.precision)} | ${f(s.micro.recall)} | ${f(s.micro.f1)} | ${f(s.sentence.precision)} | ${f(s.sentence.recall)} | ${f(s.sentence.f1)} | ${f(s.sentence.f2)} |`).join("\n")}
-`;
+`
+    : "No threshold sweep: the LLM returns labels, not probabilities.\n"
+}`;
 writeFileSync(`${dir}/summary.md`, summary);
 
 console.log(summary);

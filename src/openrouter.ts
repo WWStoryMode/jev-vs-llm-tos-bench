@@ -106,12 +106,13 @@ export type ChatResponse = {
 
 export function callLlm(
   messages: ChatMessage[],
-  opts: { model?: string; temperature?: number; json?: boolean } = {},
+  opts: { model?: string; temperature?: number; json?: boolean; maxTokens?: number } = {},
 ): Promise<Timed<ChatResponse>> {
   return post<ChatResponse>("/chat/completions", {
     model: opts.model ?? config.llmModel,
     messages,
     temperature: opts.temperature ?? 0,
+    ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
     ...(opts.json ? { response_format: { type: "json_object" } } : {}),
     usage: { include: true }, // ask OpenRouter to return usage.cost
   });
