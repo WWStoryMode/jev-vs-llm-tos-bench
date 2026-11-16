@@ -1,0 +1,180 @@
+{
+  "defaultSlug": "evernote",
+  "measured": {
+    "jevCostPerSentence": 0.00005480647168637212,
+    "llmOnlyCostPerSentence": 0.0005103360298693218,
+    "explainCostPerFlag": 0.00119336,
+    "jevMsPerCall": 319,
+    "jevConcurrency": 8
+  },
+  "meta": {
+    "jevModel": "typesafe/jev-1.13",
+    "llmOnlyModel": "anthropic/claude-sonnet-5.5",
+    "explainModel": "anthropic/claude-sonnet-5.5",
+    "rubricVersion": "v1.2",
+    "threshold": 0.6,
+    "sources": {
+      "a": "results/2026-11-15T13-19-46_A_anthropic-claude-sonnet-5-5",
+      "b": "results/2026-11-15T13-18-37_B_typesafe-jev-1-13"
+    }
+  },
+  "documents": [
+    {
+      "slug": "academia",
+      "name": "Academia.edu Terms of Use",
+      "sentences": 193,
+      "unfair": 17,
+      "flagged": 33,
+      "expertCategories": [
+        "arbitration",
+        "contract_by_using",
+        "unilateral_change",
+        "unilateral_termination",
+        "content_removal",
+        "limitation_of_liability",
+        "choice_of_law",
+        "jurisdiction"
+      ]
+    },
+    {
+      "slug": "amazon",
+      "name": "Amazon Conditions of Use",
+      "sentences": 132,
+      "unfair": 10,
+      "flagged": 16,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_termination",
+        "content_removal",
+        "limitation_of_liability",
+        "arbitration",
+        "choice_of_law",
+        "unilateral_change"
+      ]
+    },
+    {
+      "slug": "netflix",
+      "name": "Netflix Terms of Use",
+      "sentences": 85,
+      "unfair": 6,
+      "flagged": 13,
+      "expertCategories": [
+        "unilateral_termination",
+        "unilateral_change",
+        "choice_of_law"
+      ]
+    },
+    {
+      "slug": "snap",
+      "name": "Snap Terms of Service",
+      "sentences": 169,
+      "unfair": 17,
+      "flagged": 28,
+      "expertCategories": [
+        "contract_by_using",
+        "content_removal",
+        "unilateral_termination",
+        "unilateral_change",
+        "limitation_of_liability",
+        "jurisdiction",
+        "choice_of_law"
+      ]
+    },
+    {
+      "slug": "twitter",
+      "name": "Twitter Terms of Service",
+      "sentences": 80,
+      "unfair": 18,
+      "flagged": 21,
+      "expertCategories": [
+        "contract_by_using",
+        "content_removal",
+        "unilateral_change",
+        "unilateral_termination",
+        "limitation_of_liability"
+      ]
+    },
+    {
+      "slug": "linkedin",
+      "name": "LinkedIn User Agreement",
+      "sentences": 194,
+      "unfair": 24,
+      "flagged": 33,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_change",
+        "content_removal",
+        "unilateral_termination",
+        "limitation_of_liability",
+        "choice_of_law",
+        "jurisdiction"
+      ]
+    },
+    {
+      "slug": "duolingo",
+      "name": "Duolingo Terms and Conditions",
+      "sentences": 140,
+      "unfair": 19,
+      "flagged": 28,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_change",
+        "unilateral_termination",
+        "limitation_of_liability",
+        "choice_of_law",
+        "arbitration",
+        "jurisdiction"
+      ]
+    },
+    {
+      "slug": "uber",
+      "name": "Uber Terms of Use",
+      "sentences": 118,
+      "unfair": 14,
+      "flagged": 23,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_termination",
+        "unilateral_change",
+        "limitation_of_liability",
+        "content_removal",
+        "choice_of_law",
+        "arbitration"
+      ]
+    },
+    {
+      "slug": "evernote",
+      "name": "Evernote Terms of Service",
+      "sentences": 236,
+      "unfair": 27,
+      "flagged": 43,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_change",
+        "content_removal",
+        "limitation_of_liability",
+        "unilateral_termination",
+        "choice_of_law",
+        "jurisdiction",
+        "arbitration"
+      ]
+    },
+    {
+      "slug": "ebay",
+      "name": "eBay User Agreement",
+      "sentences": 260,
+      "unfair": 20,
+      "flagged": 37,
+      "expertCategories": [
+        "contract_by_using",
+        "unilateral_termination",
+        "content_removal",
+        "unilateral_change",
+        "limitation_of_liability",
+        "choice_of_law",
+        "arbitration",
+        "jurisdiction"
+      ]
+    }
+  ]
+}

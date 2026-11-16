@@ -1,0 +1,12 @@
+[
+  { "slug": "academia", "name": "Academia.edu Terms of Use", "startIdx": 0, "endIdx": 192 },
+  { "slug": "amazon", "name": "Amazon Conditions of Use", "startIdx": 193, "endIdx": 324 },
+  { "slug": "netflix", "name": "Netflix Terms of Use", "startIdx": 325, "endIdx": 409 },
+  { "slug": "snap", "name": "Snap Terms of Service", "startIdx": 410, "endIdx": 578 },
+  { "slug": "twitter", "name": "Twitter Terms of Service", "startIdx": 579, "endIdx": 658 },
+  { "slug": "linkedin", "name": "LinkedIn User Agreement", "startIdx": 659, "endIdx": 852 },
+  { "slug": "duolingo", "name": "Duolingo Terms and Conditions", "startIdx": 853, "endIdx": 992 },
+  { "slug": "uber", "name": "Uber Terms of Use", "startIdx": 993, "endIdx": 1110 },
+  { "slug": "evernote", "name": "Evernote Terms of Service", "startIdx": 1111, "endIdx": 1346 },
+  { "slug": "ebay", "name": "eBay User Agreement", "startIdx": 1347, "endIdx": 1606 }
+]
