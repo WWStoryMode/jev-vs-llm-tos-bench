@@ -11,7 +11,7 @@ type Props = {
   filter?: string; // when set, sentences not flagged for this category are dimmed
   showExpert: boolean;
   openId?: string; // sentence whose "Why?" is open
-  onWhy: (s: ReplaySentence, anchor: { top: number; left: number }) => void;
+  onWhy: (s: ReplaySentence, anchor: { rect: DOMRect; clickX: number }) => void;
   arrived: number; // sentences [0, arrived) have their Jev result; the rest are still "in flight"
 };
 
@@ -88,9 +88,8 @@ function Sentence({ s, pending, flagged, threshold, filter, showExpert, open, on
   const alpha = 0.18 + 0.5 * Math.min(1, Math.max(0, (p - threshold) / Math.max(0.01, 1 - threshold)));
 
   const openWhy = (e: MouseEvent<HTMLSpanElement> | KeyboardEvent<HTMLSpanElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = "clientX" in e && e.clientX ? e.clientX : r.left;
-    onWhy(s, { top: r.bottom + window.scrollY + 6, left: Math.max(8, Math.min(x - 40, window.innerWidth - 380)) + window.scrollX });
+    const rect = e.currentTarget.getBoundingClientRect();
+    onWhy(s, { rect, clickX: "clientX" in e && e.clientX ? e.clientX : rect.left });
   };
 
   return (

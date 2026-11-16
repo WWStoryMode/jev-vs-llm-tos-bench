@@ -1,7 +1,7 @@
 // The 8 rubric categories in rubric order, with display names from the dataset and a highlight colour each.
 import labelNames from "../../data/label_names.json";
 
-export type Category = { id: string; name: string; color: string };
+export type Category = { id: string; name: string; short: string; color: string };
 
 // Distinct hues that read as highlights on both light and dark backgrounds (opacity is added per sentence).
 const COLORS: Record<string, string> = {
@@ -15,6 +15,23 @@ const COLORS: Record<string, string> = {
   arbitration: "#d6336c",
 };
 
-export const CATEGORIES: Category[] = labelNames.map((l) => ({ id: l.rubricId, name: l.name, color: COLORS[l.rubricId] ?? "#888" }));
+// Short labels for the compact category grid (full names are in the tooltip and the "Why?" popover).
+const SHORT: Record<string, string> = {
+  limitation_of_liability: "Liability limits",
+  unilateral_termination: "Termination",
+  unilateral_change: "Changes to terms",
+  content_removal: "Content removal",
+  contract_by_using: "Contract by using",
+  choice_of_law: "Choice of law",
+  jurisdiction: "Jurisdiction",
+  arbitration: "Arbitration",
+};
+
+export const CATEGORIES: Category[] = labelNames.map((l) => ({
+  id: l.rubricId,
+  name: l.name,
+  short: SHORT[l.rubricId] ?? l.name,
+  color: COLORS[l.rubricId] ?? "#888",
+}));
 export const CATEGORY_BY_ID = new Map(CATEGORIES.map((c) => [c.id, c]));
 export const CATEGORY_IDS = CATEGORIES.map((c) => c.id);

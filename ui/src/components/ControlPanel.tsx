@@ -35,6 +35,7 @@ function usd(x: number): string {
   return `$${x.toFixed(2)}`;
 }
 
+/** Compact by design: the whole panel should fit on a 720p projector without scrolling. */
 export function ControlPanel(p: Props) {
   const running = p.analysedCount < p.sentenceCount;
   const jev = p.measured.jevCostPerSentence * p.analysedCount;
@@ -67,11 +68,12 @@ export function ControlPanel(p: Props) {
           <span>fewer flags</span>
         </div>
         <p className="stat">
-          <strong>{p.flaggedCount}</strong> of {p.sentenceCount} sentences flagged
-          {running && <span className="muted"> · {p.analysedCount} analysed so far</span>}
-        </p>
-        <p className="note">
-          Recomputed in your browser from stored probabilities in {p.recomputeMs.toFixed(1)} ms. No API calls.
+          <strong>{p.flaggedCount}</strong> of {p.sentenceCount} flagged
+          {running && <span className="muted"> · {p.analysedCount} read</span>}
+          <span className="muted" title="Recomputed in your browser from stored probabilities">
+            {" "}
+            · {p.recomputeMs.toFixed(1)} ms, no API calls
+          </span>
         </p>
       </section>
 
@@ -92,11 +94,12 @@ export function ControlPanel(p: Props) {
                 <button
                   className={`cat${p.filter === c.id ? " active" : ""}`}
                   disabled={n === 0}
+                  title={c.name}
                   onClick={() => p.onFilter(p.filter === c.id ? undefined : c.id)}
                   style={{ "--cat": c.color } as CSSProperties}
                 >
                   <span className="swatch" />
-                  <span className="cat-name">{c.name}</span>
+                  <span className="cat-name">{c.short}</span>
                   <span className="cat-n">{n}</span>
                 </button>
               </li>
@@ -112,53 +115,52 @@ export function ControlPanel(p: Props) {
         </label>
         {p.showExpert && (
           <>
-            <dl className="expert-stats">
-              <dt>Recall</dt>
-              <dd>
-                {pct(p.expert.hits, p.expert.unfair)}{" "}
-                <span className="muted">
-                  ({p.expert.hits} of {p.expert.unfair} unfair found)
-                </span>
-              </dd>
-              <dt>False alarms</dt>
-              <dd>
-                {pct(p.expert.falseAlarms, p.expert.fair)}{" "}
-                <span className="muted">
-                  ({p.expert.falseAlarms} of {p.expert.fair} fair flagged)
-                </span>
-              </dd>
-            </dl>
-            <ul className="legend">
+            <p className="expert-line">
+              Recall <strong>{pct(p.expert.hits, p.expert.unfair)}</strong>{" "}
+              <span className="muted">
+                ({p.expert.hits}/{p.expert.unfair})
+              </span>
+              {" · "}False alarms <strong>{pct(p.expert.falseAlarms, p.expert.fair)}</strong>{" "}
+              <span className="muted">
+                ({p.expert.falseAlarms}/{p.expert.fair})
+              </span>
+            </p>
+            <ul className="legend" title="This document, sentence level">
               <li>
-                <span className="legend-box hit" /> hit <span className="muted">· {p.expert.hits}</span>
+                <span className="legend-box hit" /> hit {p.expert.hits}
               </li>
               <li>
-                <span className="legend-box false_alarm" /> false alarm <span className="muted">· {p.expert.falseAlarms}</span>
+                <span className="legend-box false_alarm" /> false alarm {p.expert.falseAlarms}
               </li>
               <li>
-                <span className="legend-box missed" /> missed <span className="muted">· {p.expert.missed}</span>
+                <span className="legend-box missed" /> missed {p.expert.missed}
               </li>
             </ul>
-            <p className="note">For this document, sentence level. Expert labels are sometimes inconsistent.</p>
           </>
         )}
       </section>
 
       <section>
-        <h2>Cost</h2>
-        <dl className="cost">
-          <dt>{running ? "So far with Jev" : "This document with Jev"}</dt>
-          <dd>{usd(jevTotal)}</dd>
-          <dt>With LLM only</dt>
-          <dd>{usd(llmOnly)}</dd>
-        </dl>
-        <p className="ratio">×{ratio.toFixed(1)} cheaper</p>
-        <p className="note">
-          Jev: {p.analysedCount} sentences × {usd(p.measured.jevCostPerSentence)}
+        <h2>Cost {running ? "so far" : "for this document"}</h2>
+        <div className="cost-tiles">
+          <div>
+            <span className="tile-label">Jev</span>
+            <span className="tile-value">{usd(jevTotal)}</span>
+          </div>
+          <div>
+            <span className="tile-label">LLM only</span>
+            <span className="tile-value">{usd(llmOnly)}</span>
+          </div>
+          <div className="tile-ratio">
+            <span className="tile-label">cheaper</span>
+            <span className="tile-value">×{ratio.toFixed(1)}</span>
+          </div>
+        </div>
+        <p className="note compact">
+          {p.analysedCount} sentences × {usd(p.measured.jevCostPerSentence)}
           {p.openedExplanations > 0 &&
-            ` + ${p.openedExplanations} explanation${p.openedExplanations > 1 ? "s" : ""} opened × ${usd(p.measured.explainCostPerFlag)}`}
-          . At 100k sentences: {per100k(p.measured.jevCostPerSentence)} vs {per100k(p.measured.llmOnlyCostPerSentence)}. Measured on
-          the recorded runs.
+            ` + ${p.openedExplanations} explanation${p.openedExplanations > 1 ? "s" : ""} × ${usd(p.measured.explainCostPerFlag)}`}
+          . Per 100k sentences: {per100k(p.measured.jevCostPerSentence)} vs {per100k(p.measured.llmOnlyCostPerSentence)}.
         </p>
       </section>
     </div>

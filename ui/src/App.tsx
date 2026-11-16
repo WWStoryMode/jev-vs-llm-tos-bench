@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ControlPanel, THRESHOLD, type ExpertStats } from "./components/ControlPanel";
 import { DocumentView, sentenceDomId } from "./components/DocumentView";
 import { WhyPopover, type WhyTarget } from "./components/WhyPopover";
@@ -32,6 +32,8 @@ export function App() {
   // Explanations viewed so far; each one counts toward cost (an LLM call in a live run).
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const closeWhy = useCallback(() => setWhy(undefined), []);
+  // The document column scrolls on its own (the page doesn't), so the popover lives inside it.
+  const docPanel = useRef<HTMLElement>(null);
   // Arrival animation: how many sentences have "returned" from Jev, and a run id to restart it.
   const [arrived, setArrived] = useState(0);
   const [runId, setRunId] = useState(0);
@@ -152,7 +154,7 @@ export function App() {
       </header>
 
       <main className="layout">
-        <section className="doc-panel">
+        <section className="doc-panel" ref={docPanel}>
           {!analysis ? (
             <div className="input">
               <div className="input-bar">
@@ -221,8 +223,13 @@ export function App() {
                   showExpert={showExpert}
                   openId={why?.sentence.id}
                   arrived={arrived}
-                  onWhy={(s, anchor) => {
-                    setWhy({ sentence: s, flagged: flags.get(s.id) ?? [], ...anchor });
+                  onWhy={(s, { rect, clickX }) => {
+                    // Convert viewport coordinates to the scrolling column's own coordinates.
+                    const panel = docPanel.current!;
+                    const box = panel.getBoundingClientRect();
+                    const top = rect.bottom - box.top + panel.scrollTop + 6;
+                    const left = Math.max(8, Math.min(clickX - box.left - 40, box.width - 376));
+                    setWhy({ sentence: s, flagged: flags.get(s.id) ?? [], top, left });
                     if (s.jev.explanation) setOpened((prev) => (prev.has(s.id) ? prev : new Set(prev).add(s.id)));
                   }}
                 />
@@ -235,6 +242,16 @@ export function App() {
             </div>
           )}
           {error && <p className="error">{error}</p>}
+          {why && analysis?.mode === "replay" && (
+            <WhyPopover
+              // keep the categories in step with the slider while the popover is open
+              target={{ ...why, flagged: flags.get(why.sentence.id) ?? why.flagged }}
+              recordedAt={analysis.doc.meta.threshold}
+              explainModel={analysis.doc.meta.explainModel}
+              showExpert={showExpert}
+              onClose={closeWhy}
+            />
+          )}
         </section>
 
         <aside className="control-panel">
@@ -270,19 +287,8 @@ export function App() {
         </aside>
       </main>
 
-      {why && analysis?.mode === "replay" && (
-        <WhyPopover
-          // keep the categories in step with the slider while the popover is open
-          target={{ ...why, flagged: flags.get(why.sentence.id) ?? why.flagged }}
-          recordedAt={analysis.doc.meta.threshold}
-          explainModel={analysis.doc.meta.explainModel}
-          showExpert={showExpert}
-          onClose={closeWhy}
-        />
-      )}
-
       <footer className="footer">
-        Expert labels: UNFAIR-ToS (EU consumer law, 2019). Not legal advice. · Model: {index?.meta.jevModel ?? "…"}, rubric{" "}
+        Expert labels: UNFAIR-ToS (EU consumer law, 2019), sometimes inconsistent. Not legal advice. · Model: {index?.meta.jevModel ?? "…"}, rubric{" "}
         {index?.meta.rubricVersion ?? "…"}.
       </footer>
     </div>
