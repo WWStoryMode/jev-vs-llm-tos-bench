@@ -49,7 +49,7 @@ export function ControlPanel(p: Props) {
     <div className="panel-stack">
       <section>
         <div className="panel-head">
-          <h2>Sensitivity</h2>
+          <h2>Sensitivity threshold</h2>
           <span className="big">{p.threshold.toFixed(2)}</span>
         </div>
         <input
@@ -60,7 +60,7 @@ export function ControlPanel(p: Props) {
           step={THRESHOLD.step}
           value={p.threshold}
           onChange={(e) => p.onThreshold(Number(e.target.value))}
-          aria-label="Threshold"
+          aria-label="Sensitivity threshold"
           style={{ "--recorded": `${((p.recordedAt - THRESHOLD.min) / (THRESHOLD.max - THRESHOLD.min)) * 100}%` } as CSSProperties}
         />
         <div className="slider-scale">
