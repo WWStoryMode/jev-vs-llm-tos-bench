@@ -4,3 +4,4 @@ node_modules/
 results/playground/
 results/rubric-eval/
 results/*_limit*/
+ui/dist/
