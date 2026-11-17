@@ -2,20 +2,41 @@
   "defaultSlug": "evernote",
   "measured": {
     "jevCostPerSentence": 0.00005480647168637212,
-    "llmOnlyCostPerSentence": 0.0005103360298693218,
-    "llmOnlyCostPerChar": 0.000002948551089379449,
-    "explainCostPerFlag": 0.00119336,
+    "llmOnly": [
+      {
+        "model": "anthropic/claude-sonnet-5.5",
+        "costPerSentence": 0.0005103360298693218,
+        "costPerChar": 0.000002948551089379449
+      },
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "costPerSentence": 0.00003782389545737399,
+        "costPerChar": 2.1853383188322427e-7
+      }
+    ],
+    "explain": [
+      {
+        "model": "anthropic/claude-haiku-5.5",
+        "costPerFlag": 0.00009422545454545455
+      },
+      {
+        "model": "anthropic/claude-sonnet-5.5",
+        "costPerFlag": 0.00119336
+      }
+    ],
     "jevMsPerCall": 319,
     "jevConcurrency": 8
   },
   "meta": {
     "jevModel": "typesafe/jev-1.13",
     "llmOnlyModel": "anthropic/claude-sonnet-5.5",
-    "explainModel": "anthropic/claude-sonnet-5.5",
     "rubricVersion": "v1.2",
     "threshold": 0.6,
     "sources": {
-      "a": "results/2026-11-15T13-19-46_A_anthropic-claude-sonnet-5-5",
+      "a": [
+        "results/2026-11-15T13-19-46_A_anthropic-claude-sonnet-5-5",
+        "results/2026-11-17T16-51-30_A_anthropic-claude-haiku-5-5"
+      ],
       "b": "results/2026-11-15T13-18-37_B_typesafe-jev-1-13"
     }
   },

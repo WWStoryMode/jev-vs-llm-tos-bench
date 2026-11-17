@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ControlPanel, THRESHOLD, usd, type CostView, type ExpertStats } from "./components/ControlPanel";
+import { COMPARE, ControlPanel, THRESHOLD, shortModel, usd, type CostView, type ExpertStats } from "./components/ControlPanel";
 import { DocumentView, sentenceDomId } from "./components/DocumentView";
-import { WhyPopover, type ExplainView, type WhyTarget } from "./components/WhyPopover";
+import { WhyPopover, type ExplainBlock, type ExplainView, type WhyTarget } from "./components/WhyPopover";
 import { flaggedAt, verdict } from "./flags";
 import { sameText, toPlainText } from "./layout";
 import { classifyStream, explainSentence, type ExplainResult } from "./live";
@@ -43,7 +43,10 @@ const liveSentence = (text: string, idx: number): ReplaySentence => ({
   jev: { probs: {} },
   llmOnly: { labels: [] },
 });
-const explainKey = (s: ReplaySentence, categories: string[]) => `${s.text}\u0000${[...categories].sort().join(",")}`;
+const explainKey = (model: string, s: ReplaySentence, categories: string[]) =>
+  `${model}\u0000${s.text}\u0000${[...categories].sort().join(",")}`;
+/** Replay: one opened explanation = one sentence explained by one model (each costs that model's rate). */
+const openedKey = (model: string, id: string) => `${model}\u0000${id}`;
 
 export function App() {
   const [index, setIndex] = useState<ReplayIndex>();
@@ -70,6 +73,12 @@ export function App() {
   const [live, setLive] = useState<LiveRun>();
   const liveAbort = useRef<AbortController>(undefined);
   const [explains, setExplains] = useState<Map<string, LiveExplain>>(new Map());
+
+  // "Why?" model switch: the models with recorded explanations (Haiku first), or all of them side by side.
+  const whyModels = useMemo(() => index?.measured.explain.map((e) => e.model) ?? [], [index]);
+  const [whyPick, setWhyPick] = useState<string>();
+  const whyChoice = whyPick ?? whyModels[0] ?? "";
+  const whyActiveModels = whyChoice === COMPARE ? whyModels : whyChoice ? [whyChoice] : [];
 
   useEffect(() => {
     getJson<ReplayIndex>("/replay/index.json").then(setIndex).catch((e) => setError(String(e)));
@@ -285,16 +294,23 @@ export function App() {
     if (analysis?.mode === "replay") {
       const m = analysis.doc.measured;
       const jev = m.jevCostPerSentence * analysedCount;
-      const explain = m.explainCostPerFlag * opened.size;
+      // Each opened explanation costs its own model's measured rate per flag.
+      const openedBy = m.explain.map((e) => ({ ...e, n: [...opened].filter((k) => k.startsWith(`${e.model}\u0000`)).length }));
+      const explain = openedBy.reduce((sum, e) => sum + e.n * e.costPerFlag, 0);
       const per100k = (x: number) => usd(x * 100_000);
       return {
         jev: jev + explain,
-        llmOnly: m.llmOnlyCostPerSentence * analysedCount,
+        llmOnly: m.llmOnly.map((l) => ({ model: l.model, cost: l.costPerSentence * analysedCount })),
         llmOnlyEstimated: false,
         note:
           `${analysedCount} sentences × ${usd(m.jevCostPerSentence)}` +
-          (opened.size ? ` + ${opened.size} explanation${opened.size > 1 ? "s" : ""} × ${usd(m.explainCostPerFlag)}` : "") +
-          `. Per 100k sentences: ${per100k(m.jevCostPerSentence)} vs ${per100k(m.llmOnlyCostPerSentence)}. Measured on the recorded runs.`,
+          openedBy
+            .filter((e) => e.n > 0)
+            .map((e) => ` + ${e.n} ${shortModel(e.model)} explanation${e.n > 1 ? "s" : ""} × ${usd(e.costPerFlag)}`)
+            .join("") +
+          `. Per 100k sentences: Jev ${per100k(m.jevCostPerSentence)}` +
+          m.llmOnly.map((l) => ` · ${shortModel(l.model)} ${per100k(l.costPerSentence)}`).join("") +
+          `. Measured on the recorded runs; accuracy was a tie.`,
       };
     }
     if (analysis?.mode === "live" && live) {
@@ -302,16 +318,15 @@ export function App() {
       const explainDone = [...explains.values()].filter((e): e is Extract<LiveExplain, { status: "done" }> => e.status === "done");
       const explain = explainDone.reduce((a, e) => a + e.cost, 0);
       const chars = live.sentences.filter((s) => live.costs.has(s.id)).reduce((n, s) => n + s.text.length, 0);
-      const rate = index?.measured.llmOnlyCostPerChar ?? 0;
       return {
         jev: jev + explain,
-        llmOnly: chars * rate,
+        llmOnly: (index?.measured.llmOnly ?? []).map((l) => ({ model: l.model, cost: chars * l.costPerChar })),
         llmOnlyEstimated: true,
         note:
           `Real cost from the provider: Jev ${usd(jev)}` +
           (explainDone.length ? ` + ${explainDone.length} explanation${explainDone.length > 1 ? "s" : ""} ${usd(explain)}` : "") +
           (live.cachedCount ? `; ${live.cachedCount} sentences served from cache ($0)` : "") +
-          `. LLM-only estimated as text length × the recorded LLM-only rate.`,
+          `. LLM-only figures estimated as text length × each recorded LLM-only run's rate.`,
       };
     }
     return undefined;
@@ -319,14 +334,35 @@ export function App() {
 
   // ---------- "Why?" ----------
 
-  async function fetchExplain(s: ReplaySentence, categories: string[]) {
-    const key = explainKey(s, categories);
+  async function fetchExplain(model: string, s: ReplaySentence, categories: string[]) {
+    const key = explainKey(model, s, categories);
     setExplains((m) => new Map(m).set(key, { status: "loading" }));
     try {
-      const r = await explainSentence(s.text, categories);
+      const r = await explainSentence(s.text, categories, model);
       setExplains((m) => new Map(m).set(key, { status: "done", ...r }));
     } catch (err) {
       setExplains((m) => new Map(m).set(key, { status: "error", message: (err as Error).message }));
+    }
+  }
+
+  /**
+   * Make sure the chosen model(s) have explained this flag. Replay: count the saved explanations as opened.
+   * Live: one LLM call per model per flag, on demand (cached client- and server-side afterwards).
+   */
+  function ensureExplained(s: ReplaySentence, flagged: string[], models: string[]) {
+    if (analysis?.mode === "replay") {
+      const saved = models.filter((m) => s.jev.explanations?.[m]);
+      if (saved.length) {
+        setOpened((prev) => {
+          const keys = saved.map((m) => openedKey(m, s.id)).filter((k) => !prev.has(k));
+          return keys.length ? new Set([...prev, ...keys]) : prev;
+        });
+      }
+    } else if (flagged.length) {
+      for (const model of models) {
+        const existing = explains.get(explainKey(model, s, flagged));
+        if (!existing || existing.status === "error") fetchExplain(model, s, flagged);
+      }
     }
   }
 
@@ -338,28 +374,31 @@ export function App() {
     const left = Math.max(8, Math.min(clickX - box.left - 40, box.width - 376));
     const flagged = flags.get(s.id) ?? [];
     setWhy({ sentence: s, flagged, top, left });
-    if (analysis?.mode === "replay") {
-      if (s.jev.explanation) setOpened((prev) => (prev.has(s.id) ? prev : new Set(prev).add(s.id)));
-    } else if (flagged.length) {
-      const existing = explains.get(explainKey(s, flagged));
-      if (!existing || existing.status === "error") fetchExplain(s, flagged); // one LLM call per flag, on demand
-    }
+    ensureExplained(s, flagged, whyActiveModels);
   }
 
-  function explainView(target: WhyTarget): ExplainView {
+  // Switching the "Why?" model while a popover is open explains it with the newly chosen model(s) too.
+  function chooseWhy(choice: string) {
+    setWhyPick(choice);
+    if (why) ensureExplained(why.sentence, why.flagged, choice === COMPARE ? whyModels : [choice]);
+  }
+
+  function explainView(model: string, target: WhyTarget): ExplainView {
     const s = target.sentence;
     if (analysis?.mode === "replay") {
-      if (!s.jev.explanation) return { kind: "missing" };
+      const saved = s.jev.explanations?.[model];
+      if (!saved) return { kind: "missing" };
+      const rate = analysis.doc.measured.explain.find((e) => e.model === model)?.costPerFlag ?? 0;
       return {
         kind: "saved",
-        text: s.jev.explanation,
-        agree: s.jev.llmAgrees,
-        note: `Explained by ${analysis.doc.meta.explainModel || "the LLM"} when this run was recorded (flags at ${analysis.doc.meta.threshold.toFixed(2)}).`,
+        text: saved.explanation,
+        agree: saved.llmAgrees,
+        note: `Explained by ${model} when this run was recorded (flags at ${analysis.doc.meta.threshold.toFixed(2)}) · ${usd(rate)} per flag.`,
       };
     }
-    const e = explains.get(explainKey(s, target.flagged));
+    const e = explains.get(explainKey(model, s, target.flagged));
     if (!e || e.status === "loading") return { kind: "loading" };
-    if (e.status === "error") return { kind: "error", message: e.message, onRetry: () => fetchExplain(s, target.flagged) };
+    if (e.status === "error") return { kind: "error", message: e.message, onRetry: () => fetchExplain(model, s, target.flagged) };
     return {
       kind: "live",
       text: e.explanation,
@@ -367,6 +406,9 @@ export function App() {
       note: `Explained just now by ${e.model} · ${e.cached ? "cached, $0" : `${usd(e.cost)}, ${(e.ms / 1000).toFixed(1)} s`}.`,
     };
   }
+
+  const explainBlocks = (target: WhyTarget): ExplainBlock[] =>
+    whyActiveModels.map((model) => ({ model, label: shortModel(model), view: explainView(model, target) }));
 
   // In Replay the popover follows the slider; in Live it keeps the categories it was explained for.
   const whyTarget = why && analysis?.mode === "replay" ? { ...why, flagged: flags.get(why.sentence.id) ?? why.flagged } : why;
@@ -473,7 +515,12 @@ export function App() {
           )}
           {error && <p className="error">{error}</p>}
           {whyTarget && analysis && (
-            <WhyPopover target={whyTarget} explain={explainView(whyTarget)} showExpert={showExpert && analysis.mode === "replay"} onClose={closeWhy} />
+            <WhyPopover
+              target={whyTarget}
+              explains={explainBlocks(whyTarget)}
+              showExpert={showExpert && analysis.mode === "replay"}
+              onClose={closeWhy}
+            />
           )}
         </section>
 
@@ -495,6 +542,10 @@ export function App() {
               showExpert={showExpert}
               onShowExpert={setShowExpert}
               expert={expert}
+              whyModels={whyModels}
+              whyChoice={whyChoice}
+              onWhyChoice={chooseWhy}
+              whyIsLive={analysis.mode === "live"}
             />
           ) : (
             <div className="panel-stack">

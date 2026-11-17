@@ -12,14 +12,17 @@ export type ExplainView =
   | { kind: "live"; text: string; agree: boolean; note: string }
   | { kind: "error"; message: string; onRetry: () => void };
 
+/** One model's explanation of the flag; several when comparing models. */
+export type ExplainBlock = { model: string; label: string; view: ExplainView };
+
 type Props = {
   target: WhyTarget;
-  explain: ExplainView;
+  explains: ExplainBlock[];
   showExpert: boolean;
   onClose: () => void;
 };
 
-export function WhyPopover({ target, explain, showExpert, onClose }: Props) {
+export function WhyPopover({ target, explains, showExpert, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { sentence: s, flagged } = target;
 
@@ -54,25 +57,12 @@ export function WhyPopover({ target, explain, showExpert, onClose }: Props) {
         ))}
       </ul>
 
-      {(explain.kind === "saved" || explain.kind === "live") && (
-        <>
-          <p className="why-text">{explain.text}</p>
-          {explain.agree === false && (
-            <p className="why-disagree">The LLM doubted this flag: it did not agree a flagged category really applies.</p>
-          )}
-          <p className="note">{explain.note}</p>
-        </>
-      )}
-      {explain.kind === "missing" && <p className="why-missing">Not explained in this recording — available in Live mode.</p>}
-      {explain.kind === "loading" && <p className="why-loading">Asking the LLM to explain this flag…</p>}
-      {explain.kind === "error" && (
-        <p className="why-error">
-          {explain.message}{" "}
-          <button className="link" onClick={explain.onRetry}>
-            retry
-          </button>
-        </p>
-      )}
+      {explains.map(({ model, label, view }) => (
+        <section key={model} className={`why-block${explains.length > 1 ? " compare" : ""}`}>
+          {explains.length > 1 && <h4>{label}</h4>}
+          <ExplainBody view={view} />
+        </section>
+      ))}
 
       {showExpert && (
         <p className="note">
@@ -82,4 +72,33 @@ export function WhyPopover({ target, explain, showExpert, onClose }: Props) {
       )}
     </div>
   );
+}
+
+function ExplainBody({ view }: { view: ExplainView }) {
+  switch (view.kind) {
+    case "saved":
+    case "live":
+      return (
+        <>
+          <p className="why-text">{view.text}</p>
+          {view.agree === false && (
+            <p className="why-disagree">The LLM doubted this flag: it did not agree a flagged category really applies.</p>
+          )}
+          <p className="note">{view.note}</p>
+        </>
+      );
+    case "missing":
+      return <p className="why-missing">Not explained in this recording — available in Live mode.</p>;
+    case "loading":
+      return <p className="why-loading">Asking the LLM to explain this flag…</p>;
+    case "error":
+      return (
+        <p className="why-error">
+          {view.message}{" "}
+          <button className="link" onClick={view.onRetry}>
+            retry
+          </button>
+        </p>
+      );
+  }
 }

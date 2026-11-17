@@ -4,7 +4,8 @@
 //   npm run server:dev        # http://127.0.0.1:8787 (the Vite dev server proxies /api to it)
 //
 // POST /api/classify {text}             -> Server-Sent Events: start, sentence (one per sentence), done
-// POST /api/explain  {text, categories} -> JSON {explanation, agree, cost, ms, cached}
+// POST /api/explain  {text, categories, model?} -> JSON {explanation, agree, model, cost, ms, cached}
+//                    (model must be one of EXPLAIN_MODELS; defaults to EXPLAIN_MODEL)
 // GET  /api/health                      -> models, rubric version, cache sizes (no secrets)
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -38,8 +39,10 @@ const hash = (...parts: string[]) => createHash("sha256").update(parts.join("\u0
 const jevCache = new Map<string, Probs>();
 const explainCache = new Map<string, Explanation>();
 const jevKey = (sentence: string) => hash("jev", config.jevModel, RUBRIC_VERSION, sentence);
-const explainKey = (sentence: string, categories: string[]) =>
-  hash("explain", config.llmModel, RUBRIC_VERSION, sentence, [...categories].sort().join(","));
+const explainKey = (model: string, sentence: string, categories: string[]) =>
+  hash("explain", model, RUBRIC_VERSION, sentence, [...categories].sort().join(","));
+// Explanation models the browser may ask for: the default plus the configured list, nothing else.
+const EXPLAIN_MODELS = [...new Set([config.explainModel, ...config.explainModels])];
 
 // ---------- per-IP rate limit (fixed one-minute window) ----------
 
@@ -108,6 +111,7 @@ const ClassifyBody = z.object({ text: z.string() });
 const ExplainBody = z.object({
   text: z.string().min(1).max(2000),
   categories: z.array(z.enum(CATEGORIES as [string, ...string[]])).min(1),
+  model: z.string().max(100).optional(),
 });
 
 async function classify(req: IncomingMessage, res: ServerResponse) {
@@ -128,7 +132,7 @@ async function classify(req: IncomingMessage, res: ServerResponse) {
   let totalCost = 0;
   let cachedCount = 0;
   let errorCount = 0;
-  send("start", { count: sentences.length, sentences, jevModel: config.jevModel, llmModel: config.llmModel, rubricVersion: RUBRIC_VERSION });
+  send("start", { count: sentences.length, sentences, jevModel: config.jevModel, llmModel: config.explainModel, rubricVersion: RUBRIC_VERSION });
 
   await pool(sentences, CONCURRENCY, async (text, idx) => {
     if (closed) return;
@@ -161,13 +165,17 @@ async function explain(req: IncomingMessage, res: ServerResponse) {
   const parsed = ExplainBody.safeParse(await readJson(req));
   if (!parsed.success) throw new HttpError(400, `Expected {"text": "...", "categories": [one or more of ${CATEGORIES.join(", ")}]}.`);
   const { text, categories } = parsed.data;
+  const model = parsed.data.model ?? config.explainModel;
+  if (!EXPLAIN_MODELS.includes(model)) {
+    throw new HttpError(400, `That model isn't allowed for explanations. Allowed: ${EXPLAIN_MODELS.join(", ")}.`);
+  }
 
-  const key = explainKey(text, categories);
+  const key = explainKey(model, text, categories);
   const hit = explainCache.get(key);
-  if (hit) return sendJson(res, 200, { ...hit, model: config.llmModel, cost: 0, ms: 0, cached: true });
+  if (hit) return sendJson(res, 200, { ...hit, model, cost: 0, ms: 0, cached: true });
 
   // Same prompt, validation and retry as the benchmark's pipeline B step 3, with a batch of one.
-  const out = await llmExplainBatch([{ id: "s0", text, categories }]);
+  const out = await llmExplainBatch([{ id: "s0", text, categories }], { model });
   const result = out.labels.get("s0");
   if (!result) {
     console.error(`[explain] failed: ${out.error ?? "no result"}`);
@@ -175,8 +183,8 @@ async function explain(req: IncomingMessage, res: ServerResponse) {
   }
   const value = { explanation: result.explanation, agree: result.agree };
   explainCache.set(key, value);
-  console.log(`[explain] $${out.cost.toFixed(6)}, ${Math.round(out.ms)} ms`);
-  sendJson(res, 200, { ...value, model: config.llmModel, cost: out.cost, ms: Math.round(out.ms), cached: false });
+  console.log(`[explain] ${model} $${out.cost.toFixed(6)}, ${Math.round(out.ms)} ms`);
+  sendJson(res, 200, { ...value, model, cost: out.cost, ms: Math.round(out.ms), cached: false });
 }
 
 // ---------- server ----------
@@ -189,6 +197,8 @@ const server = createServer(async (req, res) => {
         ok: true,
         jevModel: config.jevModel,
         llmModel: config.llmModel,
+        explainModel: config.explainModel,
+        explainModels: EXPLAIN_MODELS,
         rubricVersion: RUBRIC_VERSION,
         maxSentences: MAX_SENTENCES,
         cached: { jev: jevCache.size, explain: explainCache.size },
@@ -215,5 +225,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Live server on http://${HOST}:${PORT} · Jev ${config.jevModel} · LLM ${config.llmModel} · rubric ${RUBRIC_VERSION}`);
+  console.log(`Live server on http://${HOST}:${PORT} · Jev ${config.jevModel} · explanations ${config.explainModel} · rubric ${RUBRIC_VERSION}`);
 });

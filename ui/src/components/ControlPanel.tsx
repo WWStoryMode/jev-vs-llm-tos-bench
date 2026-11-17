@@ -17,15 +17,34 @@ type Props = {
   showExpert: boolean;
   onShowExpert: (on: boolean) => void;
   expert: ExpertStats;
+  whyModels: string[]; // models that can explain a flag ("Why?")
+  whyChoice: string; // one of whyModels, or COMPARE
+  onWhyChoice: (choice: string) => void;
+  whyIsLive: boolean; // Live: the choice decides which model is called (and paid for)
 };
+
+/** "Why?" choice that shows every model's explanation side by side. */
+export const COMPARE = "compare";
 
 /** Costs worked out by the caller: measured rates (Replay) or real usage.cost totals (Live). */
 export type CostView = {
   jev: number; // Jev calls plus explanations opened
-  llmOnly: number;
+  llmOnly: { model: string; cost: number }[]; // one tile per LLM-only baseline
   llmOnlyEstimated: boolean;
   note: string;
 };
+
+/** "anthropic/claude-haiku-5.5" -> "Haiku 5.5" */
+export function shortModel(id: string): string {
+  const name = id.split("/").pop()!.replace(/^claude-/, "").replace(/-(?=\d)/, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/** How Jev compares with one LLM-only baseline, said both ways round so it is never misleading. */
+function compare(jev: number, llm: number): { text: string; cheaper: boolean } | undefined {
+  if (jev <= 0 || llm <= 0) return undefined;
+  return llm >= jev ? { text: `Jev ${(llm / jev).toFixed(1)}× cheaper`, cheaper: true } : { text: `Jev ${(jev / llm).toFixed(1)}× pricier`, cheaper: false };
+}
 
 /** Sentence-level comparison with the expert labels for this document, at the current threshold. */
 export type ExpertStats = { unfair: number; fair: number; hits: number; falseAlarms: number; missed: number };
@@ -46,7 +65,6 @@ export function usd(x: number): string {
 export function ControlPanel(p: Props) {
   const running = p.analysedCount < p.sentenceCount;
   const { jev, llmOnly } = p.cost;
-  const ratio = jev > 0 ? `×${(llmOnly / jev).toFixed(1)}` : llmOnly > 0 ? "free" : "–";
 
   return (
     <div className="panel-stack">
@@ -145,21 +163,47 @@ export function ControlPanel(p: Props) {
       </section>
       )}
 
+      {p.whyModels.length > 0 && (
+        <section>
+          <h2>"Why?" explained by</h2>
+          <div className="segmented" role="radiogroup" aria-label='"Why?" explained by'>
+            {[...p.whyModels, ...(p.whyModels.length > 1 ? [COMPARE] : [])].map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={p.whyChoice === m}
+                className={p.whyChoice === m ? "on" : ""}
+                onClick={() => p.onWhyChoice(m)}
+                title={m === COMPARE ? "Show every model's explanation" : m}
+              >
+                {m === COMPARE ? "Compare" : shortModel(m)}
+              </button>
+            ))}
+          </div>
+          {p.whyIsLive && p.whyChoice === COMPARE && <p className="note compact">Compare calls each model once per flag.</p>}
+        </section>
+      )}
+
       <section>
         <h2>Cost {running ? "so far" : "for this document"}</h2>
-        <div className="cost-tiles">
-          <div>
+        <div className="cost-tiles" style={{ gridTemplateColumns: `repeat(${1 + llmOnly.length}, 1fr)` }}>
+          <div className="tile-jev">
             <span className="tile-label">Jev</span>
             <span className="tile-value">{usd(jev)}</span>
+            {jev === 0 && llmOnly.some((l) => l.cost > 0) && <span className="tile-cmp">cached</span>}
           </div>
-          <div>
-            <span className="tile-label">LLM only{p.cost.llmOnlyEstimated ? " (estimated)" : ""}</span>
-            <span className="tile-value">{usd(llmOnly)}</span>
-          </div>
-          <div className="tile-ratio">
-            <span className="tile-label">cheaper</span>
-            <span className="tile-value">{ratio}</span>
-          </div>
+          {llmOnly.map((l) => {
+            const c = compare(jev, l.cost);
+            return (
+              <div key={l.model} title={l.model}>
+                <span className="tile-label">
+                  {shortModel(l.model)} only{p.cost.llmOnlyEstimated ? " (est.)" : ""}
+                </span>
+                <span className="tile-value">{usd(l.cost)}</span>
+                {c && <span className={`tile-cmp ${c.cheaper ? "good" : "bad"}`}>{c.text}</span>}
+              </div>
+            );
+          })}
         </div>
         <p className="note compact">{p.cost.note}</p>
       </section>
