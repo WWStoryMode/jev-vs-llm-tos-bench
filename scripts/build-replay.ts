@@ -23,6 +23,8 @@ const { values: args } = parseArgs({
 });
 const THRESHOLD = Number(args.threshold);
 
+const NO_SPACE_BEFORE = /^(?:[,.;:)!?%]|'s|'re|'ve|'ll|'m|'d|n't)$/i;
+
 // ---------- load and join ----------
 
 type BRow = { id: string; probs: Record<string, number>; predicted: string[]; explanation?: string; llmAgrees?: boolean };
@@ -84,6 +86,8 @@ const explainModel = bMd.match(/\+\s*(\S+)\s*\(explanations\)/)?.[1] ?? "";
 const measured = {
   jevCostPerSentence: jevStage.cost / jevStage.items,
   llmOnlyCostPerSentence: aCost / aSentences,
+  // For Live mode's "estimated" LLM-only figure: the A run's cost spread over the characters it read (display text).
+  llmOnlyCostPerChar: aCost / sentences.reduce((n, s) => n + displayText(s.text).length, 0),
   explainCostPerFlag: explainStage.items ? explainStage.cost / explainStage.items : 0,
   // Wall-clock × parallel requests ÷ calls ≈ how long one Jev call took.
   jevMsPerCall: Math.round((jevStage.seconds * 1000 * concurrency) / jevStage.calls),
@@ -100,7 +104,7 @@ const meta = {
 
 // ---------- display text ----------
 
-const NO_SPACE_BEFORE = /^(?:[,.;:)!?%]|'s|'re|'ve|'ll|'m|'d|n't)$/i;
+
 
 /** Undo the dataset's tokenisation: `` x '' -> "x", "a , b ." -> "a, b.", "do n't" -> "don't". Lowercase stays. */
 export function displayText(text: string): string {

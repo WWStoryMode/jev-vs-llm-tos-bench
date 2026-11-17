@@ -88,6 +88,31 @@ cp .env.example .env     # add your OPENROUTER_API_KEY
 
 Playground and rubric-eval runs save raw output to `results/`, which is gitignored. Tune the rubric on `data/val_sample_530.jsonl` (validation). Keep `data/sample_400.jsonl` (test) for the final comparison.
 
+## Demo UI: Small Print Radar
+
+A one-page demo of the main finding, **Jev decides, the LLM explains**. The brief is in [`docs/UI_BRIEF.md`](docs/UI_BRIEF.md).
+
+```bash
+npm run ui:dev        # http://localhost:5173 (Replay needs nothing else: no .env, no server)
+npm run server:dev    # only for Live mode: http://127.0.0.1:8787, proxied as /api by Vite
+```
+
+The page has one text box with two ways to analyse it:
+
+- **Replay:** load one of the 10 recorded test documents into the box. Analyse replays the saved benchmark run: the flags arrive at the measured Jev pace (8 calls in flight), and no API calls are made.
+  - The threshold slider recomputes flags in the browser from the stored probabilities.
+  - An expert-labels toggle shows hits, false alarms and misses.
+  - "Why?" shows the saved explanation.
+- **Live:** paste any T&C (at most 300 sentences), or edit a recording. The server splits the text into sentences, runs `jevClassify` 8 in flight, and streams the results as Server-Sent Events.
+  - "Why?" calls the LLM for that one flag, using the benchmark's `EXPLAIN_PROMPT`.
+  - Costs are the real `usage.cost`. The LLM-only figure is an estimate: text length × the recorded LLM-only rate.
+  - The server caches results by model, rubric version and sentence, so repeating a demo costs $0. It also has a per-IP rate limit, and the API key never leaves the server.
+
+| Command | What it does |
+|---|---|
+| `npm run build-replay [-- --a <A run> --b <B run>]` | Rebuild `ui/public/replay/*.json` from saved results, with no API calls. Document boundaries come from `data/test_docs.json`; without that file, the script prints proposed boundaries to check |
+| `npm run ui:build` | Production build of the UI to `ui/dist/` |
+
 ---
 
 ## Querying Jev

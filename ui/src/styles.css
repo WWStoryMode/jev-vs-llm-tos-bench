@@ -179,3 +179,15 @@ button.link { border: none; background: none; padding: 0; text-decoration: under
   background: #17a589; animation: pulse 1s ease-in-out infinite;
 }
 @keyframes pulse { 50% { opacity: 0.25; } }
+
+/* ---------- Live mode ---------- */
+.source.live { border-color: #17a589; }
+.s.errored { outline: 2px dashed #c0392b; outline-offset: 1px; border-radius: 3px; }
+.error-chip {
+  margin-left: 0.3rem; padding: 0 0.4rem; border-radius: 999px;
+  font: 600 0.68rem/1.5 ui-sans-serif, system-ui, sans-serif; vertical-align: 0.1em;
+  color: #c0392b; border: 1px solid #c0392b; background: var(--chip-bg);
+}
+.why-loading { margin: 0.4rem 0; color: var(--muted); font-style: italic; }
+.why-loading::after { content: ""; display: inline-block; width: 0.5rem; height: 0.5rem; margin-left: 0.4rem; border-radius: 50%; background: #17a589; animation: pulse 1s ease-in-out infinite; }
+.why-error { margin: 0.4rem 0; color: #c0392b; }

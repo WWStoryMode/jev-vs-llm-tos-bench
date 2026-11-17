@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import { CATEGORIES } from "../categories";
-import type { Measured } from "../types";
 
 type Props = {
   threshold: number;
@@ -12,12 +11,20 @@ type Props = {
   categoryCounts: Map<string, number>;
   filter?: string;
   onFilter: (category?: string) => void;
-  measured: Measured;
-  openedExplanations: number;
+  cost: CostView;
   recomputeMs: number;
+  expertAvailable: boolean; // false in Live mode: there is no answer key
   showExpert: boolean;
   onShowExpert: (on: boolean) => void;
   expert: ExpertStats;
+};
+
+/** Costs worked out by the caller: measured rates (Replay) or real usage.cost totals (Live). */
+export type CostView = {
+  jev: number; // Jev calls plus explanations opened
+  llmOnly: number;
+  llmOnlyEstimated: boolean;
+  note: string;
 };
 
 /** Sentence-level comparison with the expert labels for this document, at the current threshold. */
@@ -28,7 +35,7 @@ const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "�
 export const THRESHOLD = { min: 0.3, max: 0.9, step: 0.05, initial: 0.6 };
 
 /** Money with enough digits to see sub-cent amounts. */
-function usd(x: number): string {
+export function usd(x: number): string {
   if (x === 0) return "$0";
   if (x < 0.01) return `$${x.toFixed(4)}`;
   if (x < 1) return `$${x.toFixed(3)}`;
@@ -38,12 +45,8 @@ function usd(x: number): string {
 /** Compact by design: the whole panel should fit on a 720p projector without scrolling. */
 export function ControlPanel(p: Props) {
   const running = p.analysedCount < p.sentenceCount;
-  const jev = p.measured.jevCostPerSentence * p.analysedCount;
-  const explain = p.measured.explainCostPerFlag * p.openedExplanations;
-  const jevTotal = jev + explain;
-  const llmOnly = p.measured.llmOnlyCostPerSentence * p.analysedCount;
-  const ratio = jevTotal > 0 ? llmOnly / jevTotal : 0;
-  const per100k = (perSentence: number) => usd(perSentence * 100_000);
+  const { jev, llmOnly } = p.cost;
+  const ratio = jev > 0 ? `×${(llmOnly / jev).toFixed(1)}` : llmOnly > 0 ? "free" : "–";
 
   return (
     <div className="panel-stack">
@@ -108,6 +111,7 @@ export function ControlPanel(p: Props) {
         </ul>
       </section>
 
+      {p.expertAvailable && (
       <section>
         <label className="toggle">
           <input type="checkbox" checked={p.showExpert} onChange={(e) => p.onShowExpert(e.target.checked)} />
@@ -139,29 +143,25 @@ export function ControlPanel(p: Props) {
           </>
         )}
       </section>
+      )}
 
       <section>
         <h2>Cost {running ? "so far" : "for this document"}</h2>
         <div className="cost-tiles">
           <div>
             <span className="tile-label">Jev</span>
-            <span className="tile-value">{usd(jevTotal)}</span>
+            <span className="tile-value">{usd(jev)}</span>
           </div>
           <div>
-            <span className="tile-label">LLM only</span>
+            <span className="tile-label">LLM only{p.cost.llmOnlyEstimated ? " (estimated)" : ""}</span>
             <span className="tile-value">{usd(llmOnly)}</span>
           </div>
           <div className="tile-ratio">
             <span className="tile-label">cheaper</span>
-            <span className="tile-value">×{ratio.toFixed(1)}</span>
+            <span className="tile-value">{ratio}</span>
           </div>
         </div>
-        <p className="note compact">
-          {p.analysedCount} sentences × {usd(p.measured.jevCostPerSentence)}
-          {p.openedExplanations > 0 &&
-            ` + ${p.openedExplanations} explanation${p.openedExplanations > 1 ? "s" : ""} × ${usd(p.measured.explainCostPerFlag)}`}
-          . Per 100k sentences: {per100k(p.measured.jevCostPerSentence)} vs {per100k(p.measured.llmOnlyCostPerSentence)}.
-        </p>
+        <p className="note compact">{p.cost.note}</p>
       </section>
     </div>
   );
