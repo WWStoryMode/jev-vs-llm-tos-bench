@@ -3,6 +3,7 @@
 export type Measured = {
   jevCostPerSentence: number;
   llmOnlyCostPerSentence: number;
+  llmOnlyCostPerChar: number;
   explainCostPerFlag: number;
   jevMsPerCall: number;
   jevConcurrency: number;
@@ -23,6 +24,7 @@ export type ReplaySentence = {
   expert: string[]; // expert categories; [] = fair
   jev: { probs: Record<string, number>; explanation?: string; llmAgrees?: boolean };
   llmOnly: { labels: string[]; explanation?: string };
+  error?: string; // Live mode: this sentence's Jev call failed (shown as "error, retry", never as fair)
 };
 
 export type ReplayDoc = { slug: string; name: string; measured: Measured; meta: Meta; sentences: ReplaySentence[] };

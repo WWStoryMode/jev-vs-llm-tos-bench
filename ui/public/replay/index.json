@@ -3,6 +3,7 @@
   "measured": {
     "jevCostPerSentence": 0.00005480647168637212,
     "llmOnlyCostPerSentence": 0.0005103360298693218,
+    "llmOnlyCostPerChar": 0.000002948551089379449,
     "explainCostPerFlag": 0.00119336,
     "jevMsPerCall": 319,
     "jevConcurrency": 8

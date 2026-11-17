@@ -4,16 +4,22 @@ import type { ReplaySentence } from "../types";
 
 export type WhyTarget = { sentence: ReplaySentence; flagged: string[]; top: number; left: number };
 
+/** What the popover can show, for both Replay (saved) and Live (fetched on demand). */
+export type ExplainView =
+  | { kind: "saved"; text: string; agree?: boolean; note: string }
+  | { kind: "missing" } // replay: flagged only below the recorded threshold
+  | { kind: "loading" }
+  | { kind: "live"; text: string; agree: boolean; note: string }
+  | { kind: "error"; message: string; onRetry: () => void };
+
 type Props = {
   target: WhyTarget;
-  recordedAt: number; // threshold the saved explanations were made at
-  explainModel: string;
+  explain: ExplainView;
   showExpert: boolean;
   onClose: () => void;
 };
 
-/** "Why?" on a flag: the saved LLM explanation, or an honest note when this recording has none. */
-export function WhyPopover({ target, recordedAt, explainModel, showExpert, onClose }: Props) {
+export function WhyPopover({ target, explain, showExpert, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const { sentence: s, flagged } = target;
 
@@ -48,18 +54,24 @@ export function WhyPopover({ target, recordedAt, explainModel, showExpert, onClo
         ))}
       </ul>
 
-      {s.jev.explanation ? (
+      {(explain.kind === "saved" || explain.kind === "live") && (
         <>
-          <p className="why-text">{s.jev.explanation}</p>
-          {s.jev.llmAgrees === false && (
+          <p className="why-text">{explain.text}</p>
+          {explain.agree === false && (
             <p className="why-disagree">The LLM doubted this flag: it did not agree a flagged category really applies.</p>
           )}
-          <p className="note">
-            Explained by {explainModel || "the LLM"} when this run was recorded (flags at {recordedAt.toFixed(2)}).
-          </p>
+          <p className="note">{explain.note}</p>
         </>
-      ) : (
-        <p className="why-missing">Not explained in this recording — available in Live mode.</p>
+      )}
+      {explain.kind === "missing" && <p className="why-missing">Not explained in this recording — available in Live mode.</p>}
+      {explain.kind === "loading" && <p className="why-loading">Asking the LLM to explain this flag…</p>}
+      {explain.kind === "error" && (
+        <p className="why-error">
+          {explain.message}{" "}
+          <button className="link" onClick={explain.onRetry}>
+            retry
+          </button>
+        </p>
       )}
 
       {showExpert && (

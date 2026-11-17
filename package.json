@@ -21,7 +21,8 @@
     "score-explanations": "tsx scripts/score-explanations.ts",
     "build-replay": "tsx scripts/build-replay.ts",
     "ui:dev": "vite --config ui/vite.config.ts",
-    "ui:build": "vite build --config ui/vite.config.ts"
+    "ui:build": "vite build --config ui/vite.config.ts",
+    "server:dev": "tsx watch server/index.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

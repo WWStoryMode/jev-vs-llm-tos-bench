@@ -12,21 +12,22 @@ type Props = {
   showExpert: boolean;
   openId?: string; // sentence whose "Why?" is open
   onWhy: (s: ReplaySentence, anchor: { rect: DOMRect; clickX: number }) => void;
-  arrived: number; // sentences [0, arrived) have their Jev result; the rest are still "in flight"
+  arrived: Set<string>; // ids that have a Jev result (or an error); the rest are still "in flight"
+  onRetry?: (s: ReplaySentence) => void; // Live mode: re-run a sentence whose call failed
 };
 
 export const sentenceDomId = (id: string) => `s-${id}`;
 
 const VERDICT_TAG = { hit: "✓ hit", false_alarm: "✗ false alarm", missed: "missed", fair: "" } as const;
 
-export function DocumentView({ sentences, flags, threshold, filter, showExpert, openId, onWhy, arrived }: Props) {
+export function DocumentView({ sentences, flags, threshold, filter, showExpert, openId, onWhy, arrived, onRetry }: Props) {
   const blocks = useMemo(() => toBlocks(sentences), [sentences]);
-  const order = useMemo(() => new Map(sentences.map((s, i) => [s.id, i])), [sentences]);
   const render = (s: ReplaySentence) => (
     <Sentence
       key={s.id}
       s={s}
-      pending={order.get(s.id)! >= arrived}
+      pending={!arrived.has(s.id)}
+      onRetry={onRetry}
       flagged={flags.get(s.id) ?? []}
       threshold={threshold}
       filter={filter}
@@ -50,6 +51,7 @@ export function DocumentView({ sentences, flags, threshold, filter, showExpert, 
 type SentenceProps = {
   s: ReplaySentence;
   pending: boolean;
+  onRetry?: Props["onRetry"];
   flagged: string[];
   threshold: number;
   filter?: string;
@@ -58,7 +60,18 @@ type SentenceProps = {
   onWhy: Props["onWhy"];
 };
 
-function Sentence({ s, pending, flagged, threshold, filter, showExpert, open, onWhy }: SentenceProps) {
+function Sentence({ s, pending, onRetry, flagged, threshold, filter, showExpert, open, onWhy }: SentenceProps) {
+  if (s.error) {
+    // A failed call is never shown as "fair": the sentence keeps a visible marker until it is retried.
+    return (
+      <span id={sentenceDomId(s.id)} className="s errored" title={s.error}>
+        {s.displayText}
+        <button className="error-chip" onClick={() => onRetry?.(s)} disabled={!onRetry}>
+          error, retry
+        </button>{" "}
+      </span>
+    );
+  }
   if (pending) {
     return (
       <span id={sentenceDomId(s.id)} className="s pending">

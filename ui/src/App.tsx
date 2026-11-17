@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ControlPanel, THRESHOLD, type ExpertStats } from "./components/ControlPanel";
+import { ControlPanel, THRESHOLD, usd, type CostView, type ExpertStats } from "./components/ControlPanel";
 import { DocumentView, sentenceDomId } from "./components/DocumentView";
-import { WhyPopover, type WhyTarget } from "./components/WhyPopover";
+import { WhyPopover, type ExplainView, type WhyTarget } from "./components/WhyPopover";
 import { flaggedAt, verdict } from "./flags";
 import { sameText, toPlainText } from "./layout";
-import type { ReplayDoc, ReplayIndex } from "./types";
+import { classifyStream, explainSentence, type ExplainResult } from "./live";
+import type { ReplayDoc, ReplayIndex, ReplaySentence } from "./types";
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -14,9 +15,35 @@ async function getJson<T>(path: string): Promise<T> {
 
 /**
  * One text box for both modes. Loading a recording fills the box; Analyse then either
- * replays the recorded results (text unchanged) or runs live (new or edited text, Phase 2).
+ * replays the recorded results (text unchanged) or runs live (new or edited text).
  */
 type Analysis = { mode: "replay"; doc: ReplayDoc } | { mode: "live" };
+
+/** A live run as it streams in. Sentences start empty (pending) and fill as results arrive, in any order. */
+type LiveRun = {
+  status: "connecting" | "running" | "done" | "failed";
+  sentences: ReplaySentence[];
+  arrived: Set<string>;
+  costs: Map<string, number>; // real usage.cost per sentence (0 when served from the server cache)
+  cachedCount: number;
+  startedAt: number;
+  elapsedMs: number;
+  error?: string;
+  jevModel?: string;
+  llmModel?: string;
+};
+
+type LiveExplain = { status: "loading" } | ({ status: "done" } & ExplainResult) | { status: "error"; message: string };
+
+const liveSentence = (text: string, idx: number): ReplaySentence => ({
+  id: `live-${idx}`,
+  text,
+  displayText: text,
+  expert: [],
+  jev: { probs: {} },
+  llmOnly: { labels: [] },
+});
+const explainKey = (s: ReplaySentence, categories: string[]) => `${s.text}\u0000${[...categories].sort().join(",")}`;
 
 export function App() {
   const [index, setIndex] = useState<ReplayIndex>();
@@ -29,15 +56,20 @@ export function App() {
   const [filter, setFilter] = useState<string>();
   const [showExpert, setShowExpert] = useState(false);
   const [why, setWhy] = useState<WhyTarget>();
-  // Explanations viewed so far; each one counts toward cost (an LLM call in a live run).
-  const [opened, setOpened] = useState<Set<string>>(new Set());
   const closeWhy = useCallback(() => setWhy(undefined), []);
   // The document column scrolls on its own (the page doesn't), so the popover lives inside it.
   const docPanel = useRef<HTMLElement>(null);
-  // Arrival animation: how many sentences have "returned" from Jev, and a run id to restart it.
-  const [arrived, setArrived] = useState(0);
+
+  // Replay: saved explanations viewed (each counts at the measured per-flag rate), and the arrival clock.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  const [arrivedCount, setArrivedCount] = useState(0);
   const [runId, setRunId] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+
+  // Live: the streaming run, its abort handle, and explanations fetched on demand.
+  const [live, setLive] = useState<LiveRun>();
+  const liveAbort = useRef<AbortController>(undefined);
+  const [explains, setExplains] = useState<Map<string, LiveExplain>>(new Map());
 
   useEffect(() => {
     getJson<ReplayIndex>("/replay/index.json").then(setIndex).catch((e) => setError(String(e)));
@@ -67,22 +99,37 @@ export function App() {
     setFilter(undefined);
     setWhy(undefined);
     setOpened(new Set());
-    setAnalysis(willReplay ? { mode: "replay", doc: recording!.doc } : { mode: "live" });
-    replay();
+    setExplains(new Map());
+    liveAbort.current?.abort();
+    if (willReplay) {
+      setLive(undefined);
+      setAnalysis({ mode: "replay", doc: recording!.doc });
+      replay();
+    } else {
+      setShowExpert(false); // no answer key for pasted text
+      setAnalysis({ mode: "live" });
+      startLive(text);
+    }
   }
 
+  function backToText() {
+    liveAbort.current?.abort();
+    setAnalysis(undefined);
+  }
+
+  // ---------- Replay: arrival animation at the recorded pace ----------
+
   function replay() {
-    setArrived(0);
+    setArrivedCount(0);
     setElapsedMs(0);
     setWhy(undefined);
     setRunId((n) => n + 1);
   }
 
-  const total = analysis?.mode === "replay" ? analysis.doc.sentences.length : 0;
-  const running = total > 0 && arrived < total;
+  const replayTotal = analysis?.mode === "replay" ? analysis.doc.sentences.length : 0;
 
-  // Replays the recorded run's pace: `concurrency` calls in flight, each taking the measured
-  // per-call time, so sentence i returns at (floor(i / concurrency) + 1) × msPerCall. Document order.
+  // `concurrency` calls in flight, each taking the measured per-call time, so sentence i
+  // returns at (floor(i / concurrency) + 1) × msPerCall, in document order.
   useEffect(() => {
     if (analysis?.mode !== "replay" || runId === 0) return;
     const { jevMsPerCall, jevConcurrency } = analysis.doc.measured;
@@ -92,7 +139,7 @@ export function App() {
     const tick = () => {
       const ms = performance.now() - started;
       const done = Math.min(n, Math.floor(ms / jevMsPerCall) * jevConcurrency);
-      setArrived(done);
+      setArrivedCount(done);
       setElapsedMs(done >= n ? Math.ceil(n / jevConcurrency) * jevMsPerCall : ms);
       if (done < n) frame = requestAnimationFrame(tick);
     };
@@ -102,14 +149,97 @@ export function App() {
 
   function skip() {
     setRunId(0); // stops the clock
-    setArrived(total);
+    setArrivedCount(replayTotal);
     if (analysis?.mode === "replay") {
       const { jevMsPerCall, jevConcurrency } = analysis.doc.measured;
-      setElapsedMs(Math.ceil(total / jevConcurrency) * jevMsPerCall);
+      setElapsedMs(Math.ceil(replayTotal / jevConcurrency) * jevMsPerCall);
     }
   }
 
-  const sentences = analysis?.mode === "replay" ? analysis.doc.sentences : undefined;
+  // ---------- Live: stream /api/classify ----------
+
+  function startLive(input: string) {
+    const ctrl = new AbortController();
+    liveAbort.current = ctrl;
+    const startedAt = performance.now();
+    setLive({ status: "connecting", sentences: [], arrived: new Set(), costs: new Map(), cachedCount: 0, startedAt, elapsedMs: 0 });
+
+    classifyStream(
+      input,
+      {
+        onStart: (e) =>
+          setLive((l) => l && { ...l, status: "running", sentences: e.sentences.map(liveSentence), jevModel: e.jevModel, llmModel: e.llmModel }),
+        onSentence: (e) =>
+          setLive((l) => {
+            if (!l) return l;
+            const sentences = l.sentences.slice();
+            const prev = sentences[e.idx];
+            if (!prev) return l;
+            const ok = "probs" in e;
+            sentences[e.idx] = ok ? { ...prev, jev: { probs: e.probs }, error: undefined } : { ...prev, error: e.error };
+            const arrived = new Set(l.arrived).add(prev.id);
+            const costs = new Map(l.costs);
+            if (ok) costs.set(prev.id, e.cost);
+            return {
+              ...l,
+              sentences,
+              arrived,
+              costs,
+              cachedCount: l.cachedCount + (ok && e.cached ? 1 : 0),
+              elapsedMs: performance.now() - l.startedAt,
+            };
+          }),
+        onDone: (e) => setLive((l) => l && { ...l, status: "done", elapsedMs: e.totalMs }),
+      },
+      ctrl.signal,
+    ).catch((err: Error) =>
+      setLive((l) => {
+        if (!l) return l;
+        // Sentences that never came back are marked as errors, never left looking "fair".
+        const sentences = l.sentences.map((s) => (l.arrived.has(s.id) ? s : { ...s, error: err.message }));
+        return { ...l, status: "failed", error: err.message, sentences, arrived: new Set(sentences.map((s) => s.id)) };
+      }),
+    );
+  }
+
+  /** Re-run one sentence whose call failed (same endpoint, one sentence). */
+  async function retrySentence(target: ReplaySentence) {
+    setLive((l) => l && { ...l, sentences: l.sentences.map((s) => (s.id === target.id ? { ...s, error: undefined } : s)), arrived: withoutId(l.arrived, target.id) });
+    let result: { probs: Record<string, number>; cost: number; cached: boolean } | undefined;
+    let failure = "No result returned.";
+    try {
+      await classifyStream(target.text, {
+        onStart: () => {},
+        onSentence: (e) => {
+          if (e.idx !== 0) return;
+          if ("probs" in e) result = { probs: e.probs, cost: e.cost, cached: e.cached };
+          else failure = e.error;
+        },
+        onDone: () => {},
+      });
+    } catch (err) {
+      failure = (err as Error).message;
+    }
+    setLive((l) => {
+      if (!l) return l;
+      const sentences = l.sentences.map((s) =>
+        s.id !== target.id ? s : result ? { ...s, jev: { probs: result.probs }, error: undefined } : { ...s, error: failure },
+      );
+      const costs = new Map(l.costs);
+      if (result) costs.set(target.id, (costs.get(target.id) ?? 0) + result.cost);
+      return { ...l, sentences, costs, arrived: new Set(l.arrived).add(target.id) };
+    });
+  }
+
+  // ---------- what's on screen (shared by both modes) ----------
+
+  const sentences = analysis?.mode === "replay" ? analysis.doc.sentences : analysis?.mode === "live" ? live?.sentences : undefined;
+  const arrived = useMemo(() => {
+    if (analysis?.mode === "replay") return new Set(analysis.doc.sentences.slice(0, arrivedCount).map((s) => s.id));
+    return live?.arrived ?? new Set<string>();
+  }, [analysis, arrivedCount, live?.arrived]);
+  const total = sentences?.length ?? 0;
+  const running = analysis?.mode === "replay" ? arrived.size < total : live?.status === "connecting" || live?.status === "running";
 
   // The whole point of the slider: flags are recomputed here from stored probabilities, never fetched.
   const { flags, categoryCounts, flaggedCount, expert, recomputeMs } = useMemo(() => {
@@ -118,8 +248,9 @@ export function App() {
     const categoryCounts = new Map<string, number>();
     const expert: ExpertStats = { unfair: 0, fair: 0, hits: 0, falseAlarms: 0, missed: 0 };
     let flaggedCount = 0;
-    // Only sentences that have arrived count; the rest are still "in flight".
-    for (const s of (sentences ?? []).slice(0, arrived)) {
+    // Only sentences that have arrived count; the rest are still "in flight". Errors count as neither.
+    for (const s of sentences ?? []) {
+      if (!arrived.has(s.id) || s.error) continue;
       const f = flaggedAt(s.jev.probs, threshold);
       flags.set(s.id, f);
       if (f.length) flaggedCount++;
@@ -145,6 +276,128 @@ export function App() {
     const first = sentences.find((s) => flags.get(s.id)?.includes(category));
     if (first) document.getElementById(sentenceDomId(first.id))?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+
+  // ---------- cost ----------
+
+  const analysedCount = useMemo(() => (sentences ?? []).filter((s) => arrived.has(s.id) && !s.error).length, [sentences, arrived]);
+
+  const cost: CostView | undefined = useMemo(() => {
+    if (analysis?.mode === "replay") {
+      const m = analysis.doc.measured;
+      const jev = m.jevCostPerSentence * analysedCount;
+      const explain = m.explainCostPerFlag * opened.size;
+      const per100k = (x: number) => usd(x * 100_000);
+      return {
+        jev: jev + explain,
+        llmOnly: m.llmOnlyCostPerSentence * analysedCount,
+        llmOnlyEstimated: false,
+        note:
+          `${analysedCount} sentences × ${usd(m.jevCostPerSentence)}` +
+          (opened.size ? ` + ${opened.size} explanation${opened.size > 1 ? "s" : ""} × ${usd(m.explainCostPerFlag)}` : "") +
+          `. Per 100k sentences: ${per100k(m.jevCostPerSentence)} vs ${per100k(m.llmOnlyCostPerSentence)}. Measured on the recorded runs.`,
+      };
+    }
+    if (analysis?.mode === "live" && live) {
+      const jev = [...live.costs.values()].reduce((a, b) => a + b, 0);
+      const explainDone = [...explains.values()].filter((e): e is Extract<LiveExplain, { status: "done" }> => e.status === "done");
+      const explain = explainDone.reduce((a, e) => a + e.cost, 0);
+      const chars = live.sentences.filter((s) => live.costs.has(s.id)).reduce((n, s) => n + s.text.length, 0);
+      const rate = index?.measured.llmOnlyCostPerChar ?? 0;
+      return {
+        jev: jev + explain,
+        llmOnly: chars * rate,
+        llmOnlyEstimated: true,
+        note:
+          `Real cost from the provider: Jev ${usd(jev)}` +
+          (explainDone.length ? ` + ${explainDone.length} explanation${explainDone.length > 1 ? "s" : ""} ${usd(explain)}` : "") +
+          (live.cachedCount ? `; ${live.cachedCount} sentences served from cache ($0)` : "") +
+          `. LLM-only estimated as text length × the recorded LLM-only rate.`,
+      };
+    }
+    return undefined;
+  }, [analysis, analysedCount, opened, live, explains, index]);
+
+  // ---------- "Why?" ----------
+
+  async function fetchExplain(s: ReplaySentence, categories: string[]) {
+    const key = explainKey(s, categories);
+    setExplains((m) => new Map(m).set(key, { status: "loading" }));
+    try {
+      const r = await explainSentence(s.text, categories);
+      setExplains((m) => new Map(m).set(key, { status: "done", ...r }));
+    } catch (err) {
+      setExplains((m) => new Map(m).set(key, { status: "error", message: (err as Error).message }));
+    }
+  }
+
+  function openWhy(s: ReplaySentence, { rect, clickX }: { rect: DOMRect; clickX: number }) {
+    // Convert viewport coordinates to the scrolling column's own coordinates.
+    const panel = docPanel.current!;
+    const box = panel.getBoundingClientRect();
+    const top = rect.bottom - box.top + panel.scrollTop + 6;
+    const left = Math.max(8, Math.min(clickX - box.left - 40, box.width - 376));
+    const flagged = flags.get(s.id) ?? [];
+    setWhy({ sentence: s, flagged, top, left });
+    if (analysis?.mode === "replay") {
+      if (s.jev.explanation) setOpened((prev) => (prev.has(s.id) ? prev : new Set(prev).add(s.id)));
+    } else if (flagged.length) {
+      const existing = explains.get(explainKey(s, flagged));
+      if (!existing || existing.status === "error") fetchExplain(s, flagged); // one LLM call per flag, on demand
+    }
+  }
+
+  function explainView(target: WhyTarget): ExplainView {
+    const s = target.sentence;
+    if (analysis?.mode === "replay") {
+      if (!s.jev.explanation) return { kind: "missing" };
+      return {
+        kind: "saved",
+        text: s.jev.explanation,
+        agree: s.jev.llmAgrees,
+        note: `Explained by ${analysis.doc.meta.explainModel || "the LLM"} when this run was recorded (flags at ${analysis.doc.meta.threshold.toFixed(2)}).`,
+      };
+    }
+    const e = explains.get(explainKey(s, target.flagged));
+    if (!e || e.status === "loading") return { kind: "loading" };
+    if (e.status === "error") return { kind: "error", message: e.message, onRetry: () => fetchExplain(s, target.flagged) };
+    return {
+      kind: "live",
+      text: e.explanation,
+      agree: e.agree,
+      note: `Explained just now by ${e.model} · ${e.cached ? "cached, $0" : `${usd(e.cost)}, ${(e.ms / 1000).toFixed(1)} s`}.`,
+    };
+  }
+
+  // In Replay the popover follows the slider; in Live it keeps the categories it was explained for.
+  const whyTarget = why && analysis?.mode === "replay" ? { ...why, flagged: flags.get(why.sentence.id) ?? why.flagged } : why;
+
+  // ---------- render ----------
+
+  const progress =
+    analysis?.mode === "replay" ? (
+      <>
+        <span className="source recorded">Replay of a recorded run · {analysis.doc.name}</span>
+        <span className={`progress${running ? " running" : ""}`}>
+          {running ? "Jev is reading… " : "Done · "}
+          {arrived.size}/{total} sentences · {(elapsedMs / 1000).toFixed(1)} s
+          <span className="muted">
+            {" "}
+            ({analysis.doc.measured.jevConcurrency} in flight, ~{analysis.doc.measured.jevMsPerCall} ms each)
+          </span>
+        </span>
+        {running ? <button onClick={skip}>Skip ⏭</button> : <button onClick={replay}>↻ Replay</button>}
+      </>
+    ) : analysis?.mode === "live" && live ? (
+      <>
+        <span className="source live">Live · {live.jevModel ?? "Jev"}</span>
+        <span className={`progress${running ? " running" : ""}`}>
+          {live.status === "connecting"
+            ? "Connecting…"
+            : `${running ? "Jev is reading… " : live.status === "failed" ? "Stopped · " : "Done · "}${arrived.size}/${total} sentences · ${(live.elapsedMs / 1000).toFixed(1)} s`}
+          {live.cachedCount > 0 && <span className="muted"> · {live.cachedCount} from cache</span>}
+        </span>
+      </>
+    ) : null;
 
   return (
     <div className="app">
@@ -193,82 +446,52 @@ export function App() {
                   </button>
                 )}
                 {recording && matchesRecording && <span className="note">Recorded text is lowercased (UNFAIR-ToS source).</span>}
+                {!willReplay && text.trim() && <span className="note">Live runs call Jev for real (about $0.00005 per sentence).</span>}
               </div>
             </div>
           ) : (
             <div className="result">
               <div className="input-bar">
-                <button onClick={() => setAnalysis(undefined)}>← Edit text</button>
-                {analysis.mode === "replay" && (
-                  <>
-                    <span className="source recorded">Replay of a recorded run · {analysis.doc.name}</span>
-                    <span className={`progress${running ? " running" : ""}`}>
-                      {running ? "Jev is reading… " : "Done · "}
-                      {arrived}/{total} sentences · {(elapsedMs / 1000).toFixed(1)} s
-                      <span className="muted">
-                        {" "}
-                        ({analysis.doc.measured.jevConcurrency} in flight, ~{analysis.doc.measured.jevMsPerCall} ms each)
-                      </span>
-                    </span>
-                    {running ? <button onClick={skip}>Skip ⏭</button> : <button onClick={replay}>↻ Replay</button>}
-                  </>
-                )}
+                <button onClick={backToText}>← Edit text</button>
+                {progress}
               </div>
-              {analysis.mode === "replay" ? (
+              {live?.status === "failed" && <p className="error">{live.error}</p>}
+              {sentences && sentences.length > 0 && (
                 <DocumentView
-                  sentences={analysis.doc.sentences}
+                  sentences={sentences}
                   flags={flags}
                   threshold={threshold}
                   filter={filter}
-                  showExpert={showExpert}
+                  showExpert={showExpert && analysis.mode === "replay"}
                   openId={why?.sentence.id}
                   arrived={arrived}
-                  onWhy={(s, { rect, clickX }) => {
-                    // Convert viewport coordinates to the scrolling column's own coordinates.
-                    const panel = docPanel.current!;
-                    const box = panel.getBoundingClientRect();
-                    const top = rect.bottom - box.top + panel.scrollTop + 6;
-                    const left = Math.max(8, Math.min(clickX - box.left - 40, box.width - 376));
-                    setWhy({ sentence: s, flagged: flags.get(s.id) ?? [], top, left });
-                    if (s.jev.explanation) setOpened((prev) => (prev.has(s.id) ? prev : new Set(prev).add(s.id)));
-                  }}
+                  onRetry={analysis.mode === "live" ? retrySentence : undefined}
+                  onWhy={openWhy}
                 />
-              ) : (
-                <p className="notice">
-                  Live analysis needs the local server (<code>npm run server:dev</code>) and arrives in Phase 2. Load a recorded
-                  T&amp;C to see a replay.
-                </p>
               )}
             </div>
           )}
           {error && <p className="error">{error}</p>}
-          {why && analysis?.mode === "replay" && (
-            <WhyPopover
-              // keep the categories in step with the slider while the popover is open
-              target={{ ...why, flagged: flags.get(why.sentence.id) ?? why.flagged }}
-              recordedAt={analysis.doc.meta.threshold}
-              explainModel={analysis.doc.meta.explainModel}
-              showExpert={showExpert}
-              onClose={closeWhy}
-            />
+          {whyTarget && analysis && (
+            <WhyPopover target={whyTarget} explain={explainView(whyTarget)} showExpert={showExpert && analysis.mode === "replay"} onClose={closeWhy} />
           )}
         </section>
 
         <aside className="control-panel">
-          {analysis?.mode === "replay" ? (
+          {analysis && cost && sentences && sentences.length > 0 ? (
             <ControlPanel
               threshold={threshold}
               onThreshold={setThreshold}
-              recordedAt={analysis.doc.meta.threshold}
-              sentenceCount={analysis.doc.sentences.length}
-              analysedCount={arrived}
+              recordedAt={analysis.mode === "replay" ? analysis.doc.meta.threshold : THRESHOLD.initial}
+              sentenceCount={total}
+              analysedCount={running ? analysedCount : total}
               flaggedCount={flaggedCount}
               categoryCounts={categoryCounts}
               filter={filter}
               onFilter={chooseFilter}
-              measured={analysis.doc.measured}
-              openedExplanations={opened.size}
+              cost={cost}
               recomputeMs={recomputeMs}
+              expertAvailable={analysis.mode === "replay"}
               showExpert={showExpert}
               onShowExpert={setShowExpert}
               expert={expert}
@@ -288,9 +511,15 @@ export function App() {
       </main>
 
       <footer className="footer">
-        Expert labels: UNFAIR-ToS (EU consumer law, 2019), sometimes inconsistent. Not legal advice. · Model: {index?.meta.jevModel ?? "…"}, rubric{" "}
-        {index?.meta.rubricVersion ?? "…"}.
+        Expert labels: UNFAIR-ToS (EU consumer law, 2019), sometimes inconsistent. Not legal advice. · Model: {index?.meta.jevModel ?? "…"},
+        rubric {index?.meta.rubricVersion ?? "…"}.
       </footer>
     </div>
   );
+}
+
+function withoutId(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
 }
