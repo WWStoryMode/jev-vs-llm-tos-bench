@@ -8,7 +8,7 @@
   "scripts": {
     "play": "tsx scripts/jev-playground.ts",
     "llm-hello": "tsx scripts/llm-hello.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p ui",
     "export-data": "tsx scripts/export-data.ts",
     "inspect-data": "tsx scripts/inspect-data.ts",
     "make-sample": "tsx scripts/make-sample.ts",
@@ -19,15 +19,23 @@
     "consistency": "tsx scripts/consistency.ts",
     "explanations-sample": "tsx scripts/explanations-sample.ts",
     "score-explanations": "tsx scripts/score-explanations.ts",
-    "build-replay": "tsx scripts/build-replay.ts"
+    "build-replay": "tsx scripts/build-replay.ts",
+    "ui:dev": "vite --config ui/vite.config.ts",
+    "ui:build": "vite build --config ui/vite.config.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
   },
   "dependencies": {
     "dotenv": "^18.0.10",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "zod": "^4.6.7"
   }
 }
