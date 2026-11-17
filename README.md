@@ -14,16 +14,21 @@ This is a practice project ahead of the Founders and Coders Jev Mini Hackathon (
 
 Full UNFAIR-ToS test split: 1,607 sentences, 11% unfair. Rubric v1.2, pipeline B at threshold 0.6. Details and caveats are in [NOTES.md → Final summary](NOTES.md#final-summary).
 
-| | A: LLM only | B without LLM (Jev only) | B: Jev → LLM explains flagged |
-|---|---|---|---|
-| Sentence precision / recall | 0.58 / 0.94 | 0.58 / 0.93 | 0.58 / 0.93 |
-| False-alarm rate | 8.2% | 8.0% (adjustable with the threshold) | 8.0% (adjustable with the threshold) |
-| Cost per 100 sentences | $0.051 | **$0.0055** | $0.026 |
-| Latency per 100 (all at 4 requests in flight) | **6.3 s** | 7.0 s | 13.9 s |
-| Labels changed across 3 runs | 5.0% | **0.75%** | **0.75%** |
-| Explanations | yes, rated 3.40 | none | yes, rated **5.00** (longer explanations, a confound) |
+| | A: LLM only (Sonnet 5.5) | A: LLM only (Haiku 5.5) | B without LLM (Jev only) | B: Jev → LLM explains flagged |
+|---|---|---|---|---|
+| Sentence precision / recall | 0.58 / 0.94 | 0.57 / 0.94 | 0.58 / 0.93 | 0.58 / 0.93 |
+| False-alarm rate | 8.2% | 8.4% | 8.0% (adjustable with the threshold) | 8.0% (adjustable with the threshold) |
+| Cost per 100 sentences | $0.051 | **$0.0038** | $0.0055 | $0.026 |
+| Latency per 100 (all at 4 requests in flight) | **6.3 s** | 5.7 s (full split) | 7.0 s | 13.9 s |
+| Labels changed across 3 runs | 5.0% | 5.75% | **0.75%** | **0.75%** |
+| Explanations | yes, rated 3.40 | yes, not rated | none | yes, rated **5.00** (longer explanations, a confound) |
 
-Accuracy ties because all three use the same rubric; the LLM step in B never changes Jev's labels. Jev alone gives that accuracy at about a tenth of A's cost, which suits a first-pass filter or a count of risky clauses. Adding LLM explanations for the flagged sentences brings B to half of A's cost. B is about 7× more consistent than A and gives a probability for each flag. With explanations it is slower unless that step is streamed. In a UI, Jev's flags could show straight away, with an explanation fetched only when the user opens a flag.
+Accuracy ties because all of them use the same rubric; the LLM step in B never changes Jev's labels. Against **Sonnet 5.5**, Jev alone gives that accuracy at about a tenth of the cost. Against **Haiku 5.5** (rerun on 2026-11-17), it doesn't: Haiku alone ties on accuracy and costs about 30% less than Jev's classification step. Jev's case then rests on:
+- a **probability for each flag**, so the sensitivity can be adjusted;
+- **results per sentence** (the first flag in under a second), where an LLM batch returns all at once;
+- **consistency:** about 7× fewer label changes than Sonnet, and about 8× fewer than Haiku.
+
+With Sonnet writing the explanations for the flagged sentences, B costs half as much as A-Sonnet. **Haiku 5.5 explains just as usefully at 1/13 of the cost:** $0.000094 per flag instead of $0.00119, which brings Jev + explanations to about $0.007 per 100 sentences. The demo's "Why?" uses Haiku by default (`EXPLAIN_MODEL`). In a UI, Jev's flags could show straight away, with an explanation fetched only when the user opens a flag.
 
 ## Status
 
@@ -104,13 +109,14 @@ The page has one text box with two ways to analyse it:
   - An expert-labels toggle shows hits, false alarms and misses.
   - "Why?" shows the saved explanation.
 - **Live:** paste any T&C (at most 300 sentences), or edit a recording. The server splits the text into sentences, runs `jevClassify` 8 in flight, and streams the results as Server-Sent Events.
-  - "Why?" calls the LLM for that one flag, using the benchmark's `EXPLAIN_PROMPT`.
+  - "Why?" calls the LLM for that one flag, using the benchmark's `EXPLAIN_PROMPT`. It uses `EXPLAIN_MODEL`, which defaults to Haiku 5.5 (about $0.0003 per explanation).
   - Costs are the real `usage.cost`. The LLM-only figure is an estimate: text length × the recorded LLM-only rate.
   - The server caches results by model, rubric version and sentence, so repeating a demo costs $0. It also has a per-IP rate limit, and the API key never leaves the server.
 
 | Command | What it does |
 |---|---|
-| `npm run build-replay [-- --a <A run> --b <B run>]` | Rebuild `ui/public/replay/*.json` from saved results, with no API calls. Document boundaries come from `data/test_docs.json`; without that file, the script prints proposed boundaries to check |
+| `npm run build-replay [-- --a <A run> [--a <A run>] --b <B run> --explain <dir>]` | Rebuild `ui/public/replay/*.json` from saved full-split results, with no API calls. Each `--a` becomes an LLM-only cost baseline. `--explain` takes the "Why?" texts from a re-explanation run. Document boundaries come from `data/test_docs.json`; without that file, the script prints proposed boundaries to check |
+| `EXPLAIN_MODEL=<model> npm run reexplain -- <B run>` | Re-explain a B run's flagged sentences with another LLM, using the same prompt, batch size and concurrency; Jev's flags are unchanged |
 | `npm run ui:build` | Production build of the UI to `ui/dist/` |
 
 ---

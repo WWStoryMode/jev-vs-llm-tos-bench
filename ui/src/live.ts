@@ -73,14 +73,14 @@ export async function classifyStream(text: string, h: Handlers, signal?: AbortSi
 
 export type ExplainResult = { explanation: string; agree: boolean; model: string; cost: number; ms: number; cached: boolean };
 
-/** POST /api/explain for one sentence and the categories Jev flagged. */
-export async function explainSentence(text: string, categories: string[]): Promise<ExplainResult> {
+/** POST /api/explain for one sentence and the categories Jev flagged, with one of the server's allowed models. */
+export async function explainSentence(text: string, categories: string[], model: string): Promise<ExplainResult> {
   let res: Response;
   try {
     res = await fetch("/api/explain", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, categories }),
+      body: JSON.stringify({ text, categories, model }),
     });
   } catch {
     throw new Error("Live server not reachable. Start it with `npm run server:dev`.");

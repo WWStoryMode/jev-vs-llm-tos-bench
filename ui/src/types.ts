@@ -2,17 +2,24 @@
 
 export type Measured = {
   jevCostPerSentence: number;
-  llmOnlyCostPerSentence: number;
-  llmOnlyCostPerChar: number;
-  explainCostPerFlag: number;
+  llmOnly: LlmOnlyBaseline[]; // one per recorded LLM-only run (e.g. Sonnet 5.5, Haiku 5.5)
+  explain: ExplainBaseline[]; // one per model with saved "Why?" explanations; the first is the default
   jevMsPerCall: number;
   jevConcurrency: number;
 };
 
+/** A recorded LLM-only run used as a cost baseline. */
+export type LlmOnlyBaseline = { model: string; costPerSentence: number; costPerChar: number };
+
+/** A model that explained the recorded flags, with its measured cost per flag. */
+export type ExplainBaseline = { model: string; costPerFlag: number };
+
+/** One saved explanation of a flag. */
+export type SavedExplanation = { explanation: string; llmAgrees?: boolean };
+
 export type Meta = {
   jevModel: string;
   llmOnlyModel: string;
-  explainModel: string;
   rubricVersion: string;
   threshold: number; // the threshold B's explanations were recorded at
 };
@@ -22,7 +29,7 @@ export type ReplaySentence = {
   text: string; // original, tokenised + lowercased
   displayText: string;
   expert: string[]; // expert categories; [] = fair
-  jev: { probs: Record<string, number>; explanation?: string; llmAgrees?: boolean };
+  jev: { probs: Record<string, number>; explanations?: Record<string, SavedExplanation> }; // keyed by model
   llmOnly: { labels: string[]; explanation?: string };
   error?: string; // Live mode: this sentence's Jev call failed (shown as "error, retry", never as fair)
 };

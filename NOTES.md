@@ -411,7 +411,7 @@ The test split is 1,607 sentences, 11% unfair, the realistic mix. Consistency, l
 
 The Jev-only figures come from the 3 step 7 consistency runs (400 sample) and from the Jev stage of the step 6.5 full-split run.
 
-**Verdict.** On accuracy the two pipelines tie, because both run on the same rubric. When no explanations are needed, Jev alone gives the same accuracy at about a tenth of A's cost. That suits a first-pass filter, a count of risky clauses, or a UI that explains a flag only when the user opens it. Jev + LLM wins on:
+**Verdict.** On accuracy the two pipelines tie, because both run on the same rubric. When no explanations are needed, Jev alone gives the same accuracy at about a tenth of A's cost. (A here is Sonnet 5.5. Against Haiku 5.5, Jev is about 1.4× more expensive: see [Haiku 5.5 as the LLM-only baseline](#haiku-55-as-the-llm-only-baseline-2026-11-17).) That suits a first-pass filter, a count of risky clauses, or a UI that explains a flag only when the user opens it. Jev + LLM wins on:
 - **cost:** about half, and the saving grows as fewer sentences are unfair
 - **consistency:** about 7× fewer label changes
 - **adjustable sensitivity:** the threshold, with a probability for each flag
@@ -423,6 +423,66 @@ It loses on latency unless the explanation step is streamed. Most of the accurac
 - Parts of the rubric were influenced by test errors (change v3, arbitration v1, v1.2 liability). This makes both pipelines' test numbers slightly optimistic.
 - Pipeline A's accuracy is measured from one full-split run.
 - The labels reflect EU consumer law; nothing here is legal advice.
+
+## Haiku 5.5 as the LLM-only baseline (2026-11-17)
+
+The UI brief asked for the numbers to be updated with a cheaper LLM before the demo. Pipeline A was rerun with `LLM_MODEL=anthropic/claude-haiku-5.5` on the **full test split**, with the same settings as the Sonnet run: batch 40, 4 in flight, rubric v1.2.
+- Haiku 5.5 is listed on OpenRouter at $0.10 / $0.50 per M input/output tokens, against Sonnet 5.5's $2 / $10.
+- Run folder: `results/2026-11-17T16-51-30_A_anthropic-claude-haiku-5-5/`.
+
+| full split, 1,607 sentences | Jev only (B, classification) | A: Sonnet 5.5 | A: Haiku 5.5 |
+|---|---|---|---|
+| Sentence recall | 0.93 (160/172) | 0.94 (161) | 0.94 (162) |
+| Sentence F1 | 0.72 | 0.72 | 0.71 |
+| False-alarm rate | 8.0% (115) | 8.2% (117) | 8.4% (120) |
+| Cost, whole split | $0.088 | $0.820 | **$0.061** |
+| Cost per 100 sentences | $0.0055 | $0.051 | **$0.0038** |
+| Wall-clock | 64 s (8 in flight) | 69 s (4 in flight) | 92 s (4 in flight) |
+| Malformed replies | n/a | 1 (fixed by retry) | 0 |
+
+**What changes.** Haiku alone ties with Jev on accuracy and costs about 30% less. So "Jev at a tenth of the cost" holds only against a frontier model like Sonnet.
+
+What still favours Jev:
+- **Probabilities and an adjustable threshold.** No LLM-only run has these.
+- **Results per sentence.** Live, the first flag arrives in about 0.6 s, whereas an LLM batch of 40 returns all at once.
+- **Consistency.** It holds against Haiku too (below).
+
+### Haiku consistency (3 runs on the 400 sample, as in step 7)
+Run folders: `results/2026-11-17T16-58-12_…`, `16-58-48_…` and `16-59-23_A_anthropic-claude-haiku-5-5`, with the analysis in `results/haiku/consistency_A_haiku.md`. Cost: $0.057.
+
+| 400 sample, 3 runs each | Jev @0.6 | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|---|
+| Sentences whose label set changed | **3 (0.75%)** | 20 (5.0%) | 23 (5.75%) |
+| Flagged / not-flagged answer changed | **2 (0.5%)** | 8 (2.0%) | 10 (2.5%) |
+| Sentence F1 across runs | 0.912 (all 3) | 0.904–0.917 | 0.900–0.913 |
+
+Haiku is about as unstable as Sonnet, and Jev has about 8× fewer label changes. Haiku's changes are the same kind: a second category added or dropped (change + termination), and borderline liability sentences.
+
+### Haiku for the explanations
+`scripts/reexplain.ts` re-explains the 275 flags of the full-split B run with `EXPLAIN_MODEL=anthropic/claude-haiku-5.5`. It uses the same `EXPLAIN_PROMPT`, batch size 10 and concurrency 4; Jev's flags are unchanged. Output: `results/2026-11-17T17-01-26_B-explain_claude-haiku-5-5/`.
+
+| 275 flagged sentences | Sonnet 5.5 (B run) | Haiku 5.5 |
+|---|---|---|
+| Cost | $0.328 ($0.00119 per flag) | **$0.026 ($0.000094 per flag)** |
+| Failures / malformed | 0 / 0 | 0 / 0 |
+| Mean length | 155 characters | 159 characters |
+| Agrees with flag (expert unfair / fair) | 158 / 84 | 158 / 83 |
+| Doubts flag (expert unfair / fair) | 2 / 31 | 2 / 32 |
+| One live "Why?" | $0.0045, 1.9 s | $0.0003, 3.7 s (one sample) |
+
+- **Quality, unrated:** spot checks look equally specific and consumer-focused, and Haiku names the company more often. A blind rating like step 7's would settle it.
+- **Consequences:**
+  - Jev + Haiku explanations comes to about $0.007 per 100 sentences: Jev $0.0055 plus $0.0016 of explanations at this rate of flags.
+  - The demo now uses Haiku for "Why?": `EXPLAIN_MODEL` defaults to Haiku, and the replay data takes explanations via `build-replay --explain`.
+  - The eval's pipeline B still explains with `LLM_MODEL`.
+
+**Process note.** The first Haiku attempt forgot `--file data/unfair_tos_test.jsonl` and ran on the default 400 sample ($0.021, deleted). `build-replay` now refuses an A or B run that doesn't cover the full split.
+
+Total spend for this update: $0.169.
+- $0.084 for the full-split comparison, including that mistake.
+- $0.057 for the consistency runs.
+- $0.026 for the re-explanation.
+- $0.0003 for a live check.
 
 ## Remaining steps
 - **Later (optional):**

@@ -238,7 +238,11 @@ Pick a document → the flags arrive → drag the slider → click "Why?" → tu
 
 **1:10–1:40, the findings.**
 - Accuracy was a tie: about 93% of unfair clauses found by both.
-- Jev was about a tenth of the cost (update this after the Haiku run) and about 7× more consistent across runs.
+- Cost depends on which LLM you compare with. Jev cost about a tenth of Sonnet 5.5, but Haiku 5.5 alone was about 30% cheaper than Jev, at the same accuracy. Say so. The case for Jev is then:
+  - the probability per flag, which is what makes the slider possible;
+  - flags arriving per sentence;
+  - consistency: about 7–8× fewer label changes across runs than either Sonnet or Haiku.
+- Use the cheap LLM for what it's good at: Haiku writes the "Why?" explanations as usefully as Sonnet, at 1/13 of the cost.
 - **The surprise:** improving the questions mattered more than the choice of model. False alarms fell from 13% to 8%.
 - Jev reads literally. A vague question scored a courts clause 0.90 for arbitration; a precise one scored it 0.02.
 

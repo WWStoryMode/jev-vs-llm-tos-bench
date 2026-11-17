@@ -69,7 +69,7 @@ async function callBatch<T extends { id: string }>(
   user: string,
   ids: string[],
   schema: z.ZodType<{ results: T[] }>,
-  opts: { maxAttempts: number; maxTokens: number },
+  opts: { maxAttempts: number; maxTokens: number; model?: string },
 ): Promise<BatchOutcome<T>> {
   let cost = 0;
   let ms = 0;
@@ -81,7 +81,7 @@ async function callBatch<T extends { id: string }>(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { json: true, temperature: 0, maxTokens: opts.maxTokens },
+      { json: true, temperature: 0, maxTokens: opts.maxTokens, model: opts.model }, // model: undefined = LLM_MODEL
     );
     cost += data.usage.cost ?? 0;
     ms += callMs;
@@ -134,15 +134,19 @@ const ExplainSchema = z.object({
 });
 export type LlmExplanation = z.infer<typeof ExplainSchema>["results"][number];
 
-/** Pipeline B step 3: explain a batch of Jev-flagged sentences, given Jev's categories. Labels stay Jev's. */
+/**
+ * Pipeline B step 3: explain a batch of Jev-flagged sentences, given Jev's categories. Labels stay Jev's.
+ * `model` overrides LLM_MODEL (the eval never passes it; the UI server and scripts/reexplain.ts do).
+ */
 export function llmExplainBatch(
   batch: { id: string; text: string; categories: string[] }[],
-  opts: { maxAttempts?: number } = {},
+  opts: { maxAttempts?: number; model?: string } = {},
 ): Promise<BatchOutcome<LlmExplanation>> {
   const lines = batch.map((s) => `[${s.id}] (flagged: ${s.categories.join(", ")}) ${s.text.trim()}`);
   const user = `Explain these ${batch.length} flagged sentences:\n\n${lines.join("\n")}`;
   return callBatch(EXPLAIN_PROMPT, user, batch.map((s) => s.id), ExplainSchema, {
     maxAttempts: opts.maxAttempts ?? 2,
     maxTokens: 2000 + batch.length * 80,
+    model: opts.model,
   });
 }

@@ -2,7 +2,11 @@
 // No API calls. Imports only the rubric (not config.ts), so it runs without a .env.
 //
 //   npm run build-replay                         # uses the default A/B runs below
-//   npm run build-replay -- --a <A run dir> --b <B run dir>
+//   npm run build-replay -- --a <A run dir> [--a <another A run>] --b <B run dir>
+//
+// Each --a is an LLM-only run shown as a cost baseline; the first one also supplies the LLM-only labels.
+// Saved "Why?" explanations: each --explain <dir> (a scripts/reexplain.ts run) adds one model's explanations, listed
+// first; the B run's own explanations are always added too. The UI can show any of them, or compare them.
 //
 // If data/test_docs.json is missing, it prints proposed document boundaries and exits (check them, then save the file).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,11 +17,16 @@ import { CATEGORIES, RUBRIC_VERSION } from "../src/rubric.js";
 
 const { values: args } = parseArgs({
   options: {
-    a: { type: "string", default: "results/2026-11-15T13-19-46_A_anthropic-claude-sonnet-5-5" },
+    a: {
+      type: "string",
+      multiple: true,
+      default: ["results/2026-11-15T13-19-46_A_anthropic-claude-sonnet-5-5", "results/2026-11-17T16-51-30_A_anthropic-claude-haiku-5-5"],
+    },
     b: { type: "string", default: "results/2026-11-15T13-18-37_B_typesafe-jev-1-13" },
     data: { type: "string", default: "data/unfair_tos_test.jsonl" },
     docs: { type: "string", default: "data/test_docs.json" },
     out: { type: "string", default: "ui/public/replay" },
+    explain: { type: "string", multiple: true, default: ["results/2026-11-17T17-01-26_B-explain_claude-haiku-5-5"] },
     threshold: { type: "string", default: "0.6" }, // the threshold B's explanations were recorded at
   },
 });
@@ -36,13 +45,12 @@ function readJsonl<T>(file: string): T[] {
 
 const sentences = loadSentences(args.data);
 const bById = new Map(readJsonl<BRow>(join(args.b, "raw.jsonl")).map((r) => [r.id, r]));
-const aById = new Map(readJsonl<ARow>(join(args.a, "raw.jsonl")).map((r) => [r.id, r]));
-for (const s of sentences) {
-  if (!bById.has(s.id)) throw new Error(`B run has no row for ${s.id}`);
-  if (!aById.has(s.id)) throw new Error(`A run has no row for ${s.id}`);
-}
-if (bById.size !== sentences.length || aById.size !== sentences.length) {
-  throw new Error(`row counts differ: data ${sentences.length}, B ${bById.size}, A ${aById.size}`);
+const aRuns = args.a.map((dir) => ({ dir, byId: new Map(readJsonl<ARow>(join(dir, "raw.jsonl")).map((r) => [r.id, r])) }));
+const aById = aRuns[0]!.byId; // the first A run supplies the LLM-only labels
+// Every run must cover the full split: a sample run would make its cost per sentence meaningless here.
+for (const run of [{ dir: args.b, byId: bById }, ...aRuns]) {
+  for (const s of sentences) if (!run.byId.has(s.id)) throw new Error(`${run.dir} has no row for ${s.id} (is it a full-split run?)`);
+  if (run.byId.size !== sentences.length) throw new Error(`${run.dir}: ${run.byId.size} rows, expected ${sentences.length}`);
 }
 
 // ---------- document boundaries ----------
@@ -70,33 +78,61 @@ function stageRow(md: string, stage: string, file: string) {
 }
 
 const bFile = join(args.b, "summary.md");
-const aFile = join(args.a, "summary.md");
 const bMd = readFileSync(bFile, "utf8");
-const aMd = readFileSync(aFile, "utf8");
 
 const jevStage = stageRow(bMd, "jev", bFile);
-const explainStage = stageRow(bMd, "llm-explain", bFile);
+// Explanation sources: each re-explanation run, then the B run itself. All share the eval's stage-row format.
+type ExplainRow = { id: string; explanation?: string; llmAgrees?: boolean };
+type ExplainSource = { model: string; costPerFlag: number; byId: Map<string, ExplainRow> };
+const explainSources: ExplainSource[] = [];
+for (const dir of args.explain) {
+  const file = join(dir, "summary.md");
+  const md = readFileSync(file, "utf8");
+  const stage = stageRow(md, "llm-explain", file);
+  explainSources.push({
+    model: must(md.match(/\|\s*Model\s*\|\s*(\S+)/), "model", file)[1]!,
+    costPerFlag: stage.items ? stage.cost / stage.items : 0,
+    byId: new Map(readJsonl<ExplainRow>(join(dir, "raw.jsonl")).map((r) => [r.id, r])),
+  });
+}
+{
+  const stage = stageRow(bMd, "llm-explain", bFile);
+  const model = must(bMd.match(/\+\s*(\S+)\s*\(explanations\)/), "explanation model", bFile)[1]!;
+  if (!explainSources.some((src) => src.model === model)) {
+    explainSources.push({ model, costPerFlag: stage.items ? stage.cost / stage.items : 0, byId: bById });
+  }
+}
 const concurrency = Number(must(bMd.match(/\(concurrency (\d+)/), "concurrency", bFile)[1]);
-const aCost = Number(must(aMd.match(/\|\s*Cost\s*\|\s*\$([\d.]+)/), "total cost", aFile)[1]);
-const aSentences = Number(must(aMd.match(/\|\s*Sentences\s*\|\s*(\d+)/), "sentence count", aFile)[1]);
 const jevModel = must(bMd.match(/\|\s*Model\s*\|\s*(\S+)/), "model", bFile)[1]!;
-const llmOnlyModel = must(aMd.match(/\|\s*Model\s*\|\s*(\S+)/), "model", aFile)[1]!;
-const explainModel = bMd.match(/\+\s*(\S+)\s*\(explanations\)/)?.[1] ?? "";
+const totalChars = sentences.reduce((n, s) => n + displayText(s.text).length, 0);
+
+/** One LLM-only baseline per A run: its measured cost per sentence, and per character for Live estimates. */
+const llmOnly = args.a.map((dir) => {
+  const file = join(dir, "summary.md");
+  const md = readFileSync(file, "utf8");
+  const cost = Number(must(md.match(/\|\s*Cost\s*\|\s*\$([\d.]+)/), "total cost", file)[1]);
+  const n = Number(must(md.match(/\|\s*Sentences\s*\|\s*(\d+)/), "sentence count", file)[1]);
+  if (n !== sentences.length) throw new Error(`${file}: run covered ${n} sentences, expected ${sentences.length}`);
+  return {
+    model: must(md.match(/\|\s*Model\s*\|\s*(\S+)/), "model", file)[1]!,
+    costPerSentence: cost / n,
+    // The run's cost spread over the characters it read (display text), for Live mode's "estimated" figure.
+    costPerChar: cost / totalChars,
+  };
+});
 
 const measured = {
   jevCostPerSentence: jevStage.cost / jevStage.items,
-  llmOnlyCostPerSentence: aCost / aSentences,
-  // For Live mode's "estimated" LLM-only figure: the A run's cost spread over the characters it read (display text).
-  llmOnlyCostPerChar: aCost / sentences.reduce((n, s) => n + displayText(s.text).length, 0),
-  explainCostPerFlag: explainStage.items ? explainStage.cost / explainStage.items : 0,
+  llmOnly,
+  // One entry per model with saved explanations; the first is the UI's default.
+  explain: explainSources.map((src) => ({ model: src.model, costPerFlag: src.costPerFlag })),
   // Wall-clock × parallel requests ÷ calls ≈ how long one Jev call took.
   jevMsPerCall: Math.round((jevStage.seconds * 1000 * concurrency) / jevStage.calls),
   jevConcurrency: concurrency,
 };
 const meta = {
   jevModel,
-  llmOnlyModel,
-  explainModel,
+  llmOnlyModel: llmOnly[0]!.model, // source of each sentence's llmOnly labels
   rubricVersion: RUBRIC_VERSION,
   threshold: THRESHOLD,
   sources: { a: args.a, b: args.b },
@@ -148,18 +184,15 @@ for (const doc of docs) {
       text: s.text,
       displayText: displayText(s.text),
       expert: s.categories,
-      jev: {
-        probs: b.probs,
-        ...(b.explanation ? { explanation: b.explanation } : {}),
-        ...(b.llmAgrees !== undefined ? { llmAgrees: b.llmAgrees } : {}),
-      },
+      jev: { probs: b.probs, ...explanationsFor(b) },
       llmOnly: { labels: a.predicted, ...(a.explanation ? { explanation: a.explanation } : {}) },
     };
   });
 
   const unfair = rows.filter((r) => r.expert.length).length;
   const flagged = rows.filter((r) => flaggedAt(r.jev.probs, THRESHOLD).length).length;
-  const explained = rows.filter((r) => r.jev.explanation).length;
+  // A flag counts as explained only when every model has explained it.
+  const explained = rows.filter((r) => explainSources.every((src) => r.jev.explanations?.[src.model])).length;
   const expertCategories = [...new Set(rows.flatMap((r) => r.expert))];
   // Sanity check: our threshold logic must agree with what the eval recorded.
   for (const r of rows) {
@@ -191,6 +224,16 @@ if (totals.sentences !== expected.sentences || totals.unfair !== expected.unfair
 console.log(`OK: totals match the full split (${expected.sentences} sentences, ${expected.unfair} unfair, ${totals.flagged} flagged).`);
 
 // ---------- helpers ----------
+
+/** Every saved "Why?" for a sentence, keyed by model ({} when nobody explained it, e.g. not flagged at 0.6). */
+function explanationsFor(b: BRow): { explanations?: Record<string, { explanation: string; llmAgrees?: boolean }> } {
+  const out: Record<string, { explanation: string; llmAgrees?: boolean }> = {};
+  for (const src of explainSources) {
+    const e = src.byId.get(b.id);
+    if (e?.explanation) out[src.model] = { explanation: e.explanation, ...(e.llmAgrees !== undefined ? { llmAgrees: e.llmAgrees } : {}) };
+  }
+  return Object.keys(out).length ? { explanations: out } : {};
+}
 
 function checkDocsCover(docs: Doc[], n: number) {
   let next = 0;

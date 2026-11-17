@@ -1,0 +1,11 @@
+scope,threshold,support,tp,fp,fn,tn,precision,recall,f1,f2
+limitation_of_liability,NaN,38,37,7,1,355,0.8409,0.9737,0.9024,0.9439
+unilateral_termination,NaN,38,31,3,7,359,0.9118,0.8158,0.8611,0.8333
+unilateral_change,NaN,38,35,9,3,353,0.7955,0.9211,0.8537,0.8929
+content_removal,NaN,13,13,9,0,378,0.5909,1.0000,0.7429,0.8784
+contract_by_using,NaN,23,18,1,5,376,0.9474,0.7826,0.8571,0.8108
+choice_of_law,NaN,13,13,1,0,386,0.9286,1.0000,0.9630,0.9848
+jurisdiction,NaN,16,16,0,0,384,1.0000,1.0000,1.0000,1.0000
+arbitration,NaN,7,6,3,1,390,0.6667,0.8571,0.7500,0.8108
+micro,NaN,186,169,33,17,2981,0.8366,0.9086,0.8711,0.8932
+sentence,NaN,172,162,21,10,207,0.8852,0.9419,0.9127,0.9300
