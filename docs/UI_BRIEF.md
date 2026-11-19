@@ -155,7 +155,7 @@ A short caveats line:
 **`POST /api/classify`** with `{ text }`:
 
 - Split the text into sentences with `Intl.Segmenter('en', { granularity: 'sentence' })`.
-- Drop empty sentences. Cap the input at **300 sentences** and return an error above that.
+- Drop empty sentences. Cap the input at **1000 sentences** and return an error above that.
 - Call `jevClassify` per sentence, 8 in flight, using the same rubric and threshold logic as the eval.
 - **Stream results as Server-Sent Events**, one event per sentence as soon as it returns:
 
