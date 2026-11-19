@@ -108,7 +108,7 @@ The page has one text box with two ways to analyse it:
   - The threshold slider recomputes flags in the browser from the stored probabilities.
   - An expert-labels toggle shows hits, false alarms and misses.
   - "Why?" shows the saved explanation.
-- **Live:** paste any T&C (at most 300 sentences), or edit a recording. The server splits the text into sentences, runs `jevClassify` 8 in flight, and streams the results as Server-Sent Events.
+- **Live:** paste any T&C (at most 1000 sentences), or edit a recording. The server splits the text into sentences, runs `jevClassify` 8 in flight, and streams the results as Server-Sent Events.
   - "Why?" calls the LLM for that one flag, using the benchmark's `EXPLAIN_PROMPT`. It uses `EXPLAIN_MODEL`, which defaults to Haiku 5.5 (about $0.0003 per explanation).
   - Costs are the real `usage.cost`. The LLM-only figure is an estimate: text length × the recorded LLM-only rate.
   - The server caches results by model, rubric version and sentence, so repeating a demo costs $0. It also has a per-IP rate limit, and the API key never leaves the server.

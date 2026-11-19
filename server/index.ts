@@ -18,8 +18,8 @@ import { CATEGORIES, RUBRIC_VERSION } from "../src/rubric.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1"; // localhost only: deployment is out of scope
-const MAX_SENTENCES = 300;
-const MAX_BODY_BYTES = 200_000;
+const MAX_SENTENCES = 1000;
+const MAX_BODY_BYTES = 1_000_000;
 const CONCURRENCY = 8; // same as the eval
 
 // ---------- sentence splitting ----------
